@@ -1,0 +1,4 @@
+.env
+api.env
+*.log
+.DS_Store

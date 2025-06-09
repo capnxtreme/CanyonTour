@@ -62,15 +62,22 @@ function App() {
         console.error('❌ FATAL: Google Maps API key not found. Please set REACT_APP_GOOGLE_MAPS_API_KEY.');
         return null;
       }
-      console.log('  - API key found.');
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`
-      );
+      console.log('  - API key found:', apiKey.substring(0, 10) + '...');
+      
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`;
+      console.log('  - Making request to:', url);
+      
+      const response = await fetch(url);
+      console.log('  - Response status:', response.status);
+      
       if (!response.ok) {
         console.error('  - ❌ Geocoding API request failed:', response.status, response.statusText);
         return null;
       }
+      
       const data = await response.json();
+      console.log('  - Geocoding response:', JSON.stringify(data, null, 2));
+      
       if (data.status === 'OK' && data.results && data.results.length > 0) {
         const result = data.results[0];
         const coords = {
@@ -80,7 +87,7 @@ function App() {
         console.log('  - ✅ Successfully geocoded:', location, '→', coords);
         return coords;
       } else {
-        console.log('  - ❌ Geocoding failed for:', location, 'Status:', data.status);
+        console.log('  - ❌ Geocoding failed for:', location, 'Status:', data.status, 'Error:', data.error_message);
         return null;
       }
     } catch (error) {
@@ -114,7 +121,11 @@ function App() {
   }, [geocodeLocation]);
 
   const calculateRoadTwistiness = useCallback((element: any): number => {
-    const tags = element.tags || {};
+    if (!element || !element.tags) {
+      console.log('  - Skipping element without tags:', element);
+      return 0;
+    }
+    const tags = element.tags;
     let twistiness = 0;
     if (tags.highway === 'tertiary') twistiness += 3;
     if (tags.highway === 'unclassified') twistiness += 4;
@@ -126,6 +137,7 @@ function App() {
   }, []);
 
   const calculateStrategicRoutingValue = useCallback((tags: any): number => {
+    if (!tags) return 0;
     let value = 0;
     if (tags.highway === 'give_way' || tags.highway === 'stop') value += 3;
     if (tags.barrier === 'cattle_grid' || tags.barrier === 'height_restrictor') value += 4;
@@ -135,6 +147,7 @@ function App() {
   }, []);
 
   const determineRoutingPurpose = useCallback((tags: any): 'twisty_routing' | 'elevation_forcing' | 'scenic_bypass' | 'canyon_access' => {
+    if (!tags) return 'scenic_bypass';
     if (tags.mountain_pass === 'yes' || tags.natural === 'pass') return 'elevation_forcing';
     if (tags.natural === 'saddle' || tags.natural === 'ridge') return 'canyon_access';
     if (tags.highway === 'tertiary' || tags.highway === 'unclassified') return 'twisty_routing';
@@ -142,6 +155,7 @@ function App() {
   }, []);
 
   const generateStrategicRoutingName = useCallback((tags: any, elementType: string): string => {
+    if (!tags) return 'Unknown Point';
     if (tags?.name) return `${tags.name}`;
     if (tags?.highway) return `Twisty ${tags.highway.charAt(0).toUpperCase() + tags.highway.slice(1)} Route`;
     if (tags?.natural === 'pass') return 'Mountain Pass Route';
@@ -151,6 +165,7 @@ function App() {
   }, []);
 
   const getStrategicRoutingDescription = useCallback((tags: any): string => {
+    if (!tags) return 'Unknown location';
     const descriptions: Record<string, string> = {
       'tertiary': 'Forces routing through narrow tertiary roads with curves and elevation changes',
       'unclassified': 'Strategic routing through unclassified back roads for maximum twistiness',
@@ -187,31 +202,47 @@ function App() {
 
   const findTwistyRoadWaypoints = useCallback(async (start: string, end: string): Promise<SuggestedWaypoint[]> => {
     console.log('3. Finding twisty road waypoints...');
+    console.log('  - Start location:', start);
+    console.log('  - End location:', end);
     try {
       const bbox = await getEnhancedRouteBoundingBox(start, end);
-      if (!bbox) return [];
+      if (!bbox) {
+        console.log('  - ❌ Failed to get bounding box. Check if start/end locations are valid.');
+        return [];
+      }
+      console.log('  - Using bounding box:', bbox);
 
+      // Split bbox into components for proper formatting
+      const [minLat, minLon, maxLat, maxLon] = bbox.split(',').map(Number);
+      
       const overpassQuery = `
-        [out:json][timeout:25];
-        (
-          way["highway"~"^(tertiary|unclassified|residential)$"][bbox:${bbox}];
-          way["highway"="secondary"]["lanes"~"^(1|2)$"][bbox:${bbox}];
-          way["highway"]["mountain_pass"="yes"][bbox:${bbox}];
-          way["highway"~"^(tertiary|unclassified)$"]["surface"~"^(unpaved|gravel|dirt)$"][bbox:${bbox}];
-          node["highway"="give_way"][bbox:${bbox}];
-          node["highway"="stop"][bbox:${bbox}];
-          node["barrier"~"^(cattle_grid|height_restrictor)$"][bbox:${bbox}];
-          node["highway"="turning_circle"][bbox:${bbox}];
-          way["junction"="roundabout"][bbox:${bbox}];
-          node["place"~"^(hamlet|village)$"][bbox:${bbox}];
-          node["natural"~"^(saddle|pass|ridge)$"][bbox:${bbox}];
-        );
-        out geom meta;`;
+[out:json][timeout:25];
+(
+  way["highway"~"^(tertiary|unclassified|residential)$"](${minLat},${minLon},${maxLat},${maxLon});
+  way["highway"="secondary"]["lanes"~"^(1|2)$"](${minLat},${minLon},${maxLat},${maxLon});
+  way["highway"]["mountain_pass"="yes"](${minLat},${minLon},${maxLat},${maxLon});
+  way["highway"~"^(tertiary|unclassified)$"]["surface"~"^(unpaved|gravel|dirt)$"](${minLat},${minLon},${maxLat},${maxLon});
+  node["highway"="give_way"](${minLat},${minLon},${maxLat},${maxLon});
+  node["highway"="stop"](${minLat},${minLon},${maxLat},${maxLon});
+  node["barrier"~"^(cattle_grid|height_restrictor)$"](${minLat},${minLon},${maxLat},${maxLon});
+  node["highway"="turning_circle"](${minLat},${minLon},${maxLat},${maxLon});
+  way["junction"="roundabout"](${minLat},${minLon},${maxLat},${maxLon});
+  node["place"~"^(hamlet|village)$"](${minLat},${minLon},${maxLat},${maxLon});
+  node["natural"~"^(saddle|pass|ridge)$"](${minLat},${minLon},${maxLat},${maxLon});
+);
+out body;
+>;
+out skel qt;`;
 
-      console.log('  - - Executing Overpass query...');
+      console.log('  - Executing Overpass query...');
+      console.log('  - Query:', overpassQuery);
+      
       const response = await fetch(`https://overpass-api.de/api/interpreter`, {
         method: 'POST',
         body: overpassQuery,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
       });
 
       console.log('  - Overpass API response status:', response.status);
@@ -219,31 +250,50 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         console.log(`  - ✅ Overpass query successful. Found ${data.elements?.length || 0} potential elements.`);
+        
         if ((data.elements?.length || 0) === 0) {
-          console.log('  - No elements returned from Overpass. The query might be too restrictive or the area has no matching features.');
+          console.log('  - No elements returned from Overpass. Possible reasons:');
+          console.log('    1. The query might be too restrictive');
+          console.log('    2. The area might not have any matching features');
+          console.log('    3. The bounding box might be too small');
+          console.log('    4. The start/end locations might be too close together');
+          return [];
         }
-        return data.elements?.map((element: any) => {
-          const name = generateStrategicRoutingName(element.tags, element.type);
-          const lat = element.lat || (element.bounds ? (element.bounds.minlat + element.bounds.maxlat) / 2 : 0);
-          const lon = element.lon || (element.bounds ? (element.bounds.minlon + element.bounds.maxlon) / 2 : 0);
-          
-          const twistiness = calculateRoadTwistiness(element);
-          const strategicValue = calculateStrategicRoutingValue(element.tags);
-          
-          return {
-            id: `twisty-${element.id}`,
-            location: name,
-            description: getStrategicRoutingDescription(element.tags),
-            checked: true,
-            type: 'strategic_routing',
-            coordinates: { lat, lon },
-            roadType: element.tags?.highway || 'unknown',
-            twistiness: twistiness,
-            strategicValue: strategicValue,
-            routingPurpose: determineRoutingPurpose(element.tags),
-            score: twistiness * strategicValue,
-          };
-        }).filter((w: any) => w.twistiness > 3) || [];
+
+        // Filter out elements without tags first
+        const validElements = data.elements?.filter((element: any) => element && element.tags) || [];
+        console.log(`  - Found ${validElements.length} elements with valid tags`);
+
+        const waypoints = validElements.map((element: any) => {
+          try {
+            const name = generateStrategicRoutingName(element.tags, element.type);
+            const lat = element.lat || (element.bounds ? (element.bounds.minlat + element.bounds.maxlat) / 2 : 0);
+            const lon = element.lon || (element.bounds ? (element.bounds.minlon + element.bounds.maxlon) / 2 : 0);
+            
+            const twistiness = calculateRoadTwistiness(element);
+            const strategicValue = calculateStrategicRoutingValue(element.tags);
+            
+            return {
+              id: `twisty-${element.id}`,
+              location: name,
+              description: getStrategicRoutingDescription(element.tags),
+              checked: true,
+              type: 'strategic_routing',
+              coordinates: { lat, lon },
+              roadType: element.tags?.highway || 'unknown',
+              twistiness: twistiness,
+              strategicValue: strategicValue,
+              routingPurpose: determineRoutingPurpose(element.tags),
+              score: twistiness * strategicValue,
+            };
+          } catch (error) {
+            console.log('  - Error processing element:', error);
+            return null;
+          }
+        }).filter((w: any): w is SuggestedWaypoint => w !== null && w.twistiness > 3);
+
+        console.log(`  - After filtering for twistiness > 3: ${waypoints.length} waypoints remaining`);
+        return waypoints;
       } else {
         console.error(`  - ❌ Overpass API request failed with status: ${response.status}`);
         const errorBody = await response.text();
@@ -423,26 +473,28 @@ function App() {
             <h2 className="text-2xl font-semibold mb-4">Plan Your Scenic Route</h2>
             
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Start Location</label>
-                <input
-                  type="text"
-                  value={route.start}
-                  onChange={(e) => setRoute(prev => ({ ...prev, start: e.target.value }))}
-                  placeholder="Enter starting location"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+              <div className="location-controls">
+                <div className="location-input-group">
+                  <label htmlFor="start-location">Start Location</label>
+                  <input
+                    id="start-location"
+                    type="text"
+                    value={route.start}
+                    onChange={(e) => setRoute(prev => ({ ...prev, start: e.target.value }))}
+                    placeholder="Enter starting location"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">End Location</label>
-                <input
-                  type="text"
-                  value={route.end}
-                  onChange={(e) => setRoute(prev => ({ ...prev, end: e.target.value }))}
-                  placeholder="Enter destination"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <div className="location-input-group">
+                  <label htmlFor="end-location">End Location</label>
+                  <input
+                    id="end-location"
+                    type="text"
+                    value={route.end}
+                    onChange={(e) => setRoute(prev => ({ ...prev, end: e.target.value }))}
+                    placeholder="Enter destination"
+                  />
+                </div>
               </div>
 
               {(suggestedWaypoints.length > 0 || isLoadingSuggestions) && (

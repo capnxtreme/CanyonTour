@@ -273,9 +273,15 @@ out skel qt;`;
           // Adjust twistiness based on progress
           twistiness *= progressScore;
           
+          // Filter out points with very low twistiness score
+          if (twistiness < 0.1) {
+            // console.log(`  - Filtered out waypoint ${name}: Twistiness score ${twistiness} too low`);
+            return null;
+          }
+          
           // Penalize points that are too close to start or end
           if (distToStart < 5 || distToEnd < 5) {
-            twistiness *= 0.5;
+            twistiness *= 0.5; // reduce score but don't discard
           }
           
           // Only include waypoints with valid coordinates and non-zero twistiness
@@ -291,31 +297,21 @@ out skel qt;`;
             type: 'strategic_routing',
             coordinates: { lat, lon },
             roadType: element.tags?.highway || 'unknown',
-            twistiness: twistiness,
-            score: twistiness
+            twistiness: twistiness
           };
         } catch (error) {
           console.log('  - Error processing element:', error);
           return null;
         }
-      }).filter((w: any): w is SuggestedWaypoint => {
-        const isValid = w !== null && w.twistiness > 0.5;
-        if (!isValid) {
-          console.log(`  - Filtered out waypoint ${w?.location}: Twistiness score ${w?.twistiness} too low`);
-        }
-        return isValid;
-      });
+      }).filter(Boolean);
 
-      console.log(`  - After filtering for twistiness > 0.5: ${waypoints.length} waypoints remaining`);
+      console.log(`  - After filtering, ${waypoints.length} waypoints remaining`);
 
       // Sort waypoints by twistiness score
       waypoints.sort((a: SuggestedWaypoint, b: SuggestedWaypoint) => (b.twistiness || 0) - (a.twistiness || 0));
       
-      // Take top 5 waypoints
-      const topWaypoints = waypoints.slice(0, 5);
-      
-      console.log(`  - Selected ${topWaypoints.length} waypoints with highest twistiness scores`);
-      return topWaypoints;
+      console.log(`  - Found ${waypoints.length} total twisty waypoints.`);
+      return waypoints;
     } catch (error) {
       console.log('  - ❌ Advanced OSM query fetch failed:', error);
     }

@@ -143,27 +143,25 @@ export const generateRouteOptions = (
 ) => {
   console.log('4. Generating route options...');
 
-  const options = {
-    twisty: optimizeRouteByStrategy(waypoints, startCoords, endCoords, 'twisty'),
-    balanced: optimizeRouteByStrategy(waypoints, startCoords, endCoords, 'balanced'),
-    direct: optimizeRouteByStrategy(waypoints, startCoords, endCoords, 'direct'),
-  };
+  const twistyWaypoints = optimizeRouteByStrategy(waypoints, startCoords, endCoords, 'twisty');
 
-  // Deduplicate waypoints across options to ensure variety
-  const balancedFiltered = options.balanced.filter(
-    (b) => !options.twisty.some((t) => t.id === b.id)
+  const remainingAfterTwisty = waypoints.filter(
+    (wp) => !twistyWaypoints.some((twp) => twp.id === wp.id)
   );
-  const directFiltered = options.direct.filter(
-    (d) =>
-      !options.twisty.some((t) => t.id === d.id) &&
-      !options.balanced.some((b) => b.id === d.id)
+
+  const balancedWaypoints = optimizeRouteByStrategy(remainingAfterTwisty, startCoords, endCoords, 'balanced');
+
+  const remainingAfterBalanced = remainingAfterTwisty.filter(
+    (wp) => !balancedWaypoints.some((bwp) => bwp.id === wp.id)
   );
+  
+  const directWaypoints = optimizeRouteByStrategy(remainingAfterBalanced, startCoords, endCoords, 'direct');
 
   const finalOptions = [
-    { name: 'Most Twisty', waypoints: options.twisty.slice(0, 10) },
-    { name: 'Balanced', waypoints: balancedFiltered.slice(0, 10) },
-    { name: 'Direct & Scenic', waypoints: directFiltered.slice(0, 10) },
-  ].filter(option => option.waypoints.length > 0);
+    { name: 'Most Twisty', waypoints: twistyWaypoints.slice(0, 10) },
+    { name: 'Balanced', waypoints: balancedWaypoints.slice(0, 10) },
+    { name: 'Direct & Scenic', waypoints: directWaypoints.slice(0, 10) },
+  ].filter(option => option.waypoints.length > 2); // Ensure options have a minimum number of waypoints
 
   console.log('  - ✅ Route option generation complete. Found:', finalOptions.length, 'options');
   return finalOptions;

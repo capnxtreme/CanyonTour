@@ -1,40 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import './App.css';
 import InteractiveMap from './InteractiveMap';
-
-interface Waypoint {
-  id: string;
-  location: string;
-}
-
-interface Route {
-  start: string;
-  end: string;
-  waypoints: Waypoint[];
-}
-
-interface RoutePreferences {
-  avoidHighways: boolean;
-  avoidTolls: boolean;
-  favorScenicRoads: boolean;
-}
-
-interface SuggestedWaypoint {
-  id: string;
-  location: string;
-  description: string;
-  checked: boolean;
-  type: string;
-  score?: number;
-  coordinates?: { lat: number; lon: number };
-  twistiness?: number;
-  strategicValue?: number;
-  routingPurpose?: 'twisty_routing' | 'elevation_forcing' | 'scenic_bypass' | 'canyon_access';
-  roadType?: string;
-  elevation?: number;
-  elevationChange?: number;
-}
+import { Route, RoutePreferences, SuggestedWaypoint, RouteOption } from './types';
+import { geocodeLocation, getEnhancedRouteBoundingBox } from './services/googleMapsService';
+import { findTwistyRoadWaypoints } from './services/osmService';
+import { optimizeForTwistyRouting, generateRouteOptions } from './utils/routingUtils';
+import { useDebounce } from './hooks/useDebounce';
 
 function App() {
   const [route, setRoute] = useState<Route>({
@@ -42,6 +14,7 @@ function App() {
     end: '',
     waypoints: []
   });
+  const debouncedRoute = useDebounce(route, 500);
   const [routeUrl, setRouteUrl] = useState<string>('');
   const [wazeUrl, setWazeUrl] = useState<string>('');
   const [preferences, setPreferences] = useState<RoutePreferences>({
@@ -49,318 +22,183 @@ function App() {
     avoidTolls: true,
     favorScenicRoads: true
   });
-  const [suggestedWaypoints, setSuggestedWaypoints] = useState<SuggestedWaypoint[]>([]);
+  const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
+  const markersRef = useRef<google.maps.Marker[]>([]);
 
-  // --- Core Utility Functions ---
-
-  const geocodeLocation = useCallback(async (location: string): Promise<{ lat: number; lon: number } | null> => {
-    console.log('1. Geocoding location with Google API:', location);
-    try {
-      const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        console.error('❌ FATAL: Google Maps API key not found. Please set REACT_APP_GOOGLE_MAPS_API_KEY.');
-        return null;
-      }
-      console.log('  - API key found:', apiKey.substring(0, 10) + '...');
-      
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`;
-      console.log('  - Making request to:', url);
-      
-      const response = await fetch(url);
-      console.log('  - Response status:', response.status);
-      
-      if (!response.ok) {
-        console.error('  - ❌ Geocoding API request failed:', response.status, response.statusText);
-        return null;
-      }
-      
-      const data = await response.json();
-      console.log('  - Geocoding response:', JSON.stringify(data, null, 2));
-      
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const result = data.results[0];
-        const coords = {
-          lat: result.geometry.location.lat,
-          lon: result.geometry.location.lng
-        };
-        console.log('  - ✅ Successfully geocoded:', location, '→', coords);
-        return coords;
-      } else {
-        console.log('  - ❌ Geocoding failed for:', location, 'Status:', data.status, 'Error:', data.error_message);
-        return null;
-      }
-    } catch (error) {
-      console.error('  - ❌ Geocoding error:', error);
-      return null;
-    }
-  }, []);
-
-  const getEnhancedRouteBoundingBox = useCallback(async (start: string, end: string): Promise<string | null> => {
-    console.log('2. Calculating enhanced route bounding box...');
-    try {
-      const startCoords = await geocodeLocation(start);
-      const endCoords = await geocodeLocation(end);
-      if (!startCoords || !endCoords) {
-        console.error("  - ❌ Couldn't get coordinates for start or end. Aborting.");
-        return null;
-      };
-      
-      const minLat = Math.min(startCoords.lat, endCoords.lat);
-      const maxLat = Math.max(startCoords.lat, endCoords.lat);
-      const minLon = Math.min(startCoords.lon, endCoords.lon);
-      const maxLon = Math.max(startCoords.lon, endCoords.lon);
-      
-      const bbox = `${minLat},${minLon},${maxLat},${maxLon}`;
-      console.log('  - ✅ Calculated bounding box:', bbox);
-      return bbox;
-    } catch (error) {
-      console.log('  - ❌ Failed to get route bounding box:', error);
-      return null;
-    }
-  }, [geocodeLocation]);
-
-  const calculateRoadTwistiness = useCallback((element: any): number => {
-    if (!element || !element.tags) {
-      console.log('  - Skipping element without tags:', element);
-      return 0;
-    }
-    const tags = element.tags;
-    let twistiness = 0;
-    if (tags.highway === 'tertiary') twistiness += 3;
-    if (tags.highway === 'unclassified') twistiness += 4;
-    if (tags.highway === 'residential') twistiness += 2;
-    if (tags.mountain_pass === 'yes') twistiness += 5;
-    if (tags.surface === 'unpaved' || tags.surface === 'gravel' || tags.surface === 'dirt') twistiness += 2;
-    if (tags.natural === 'saddle' || tags.natural === 'pass') twistiness += 3;
-    return Math.min(twistiness, 10);
-  }, []);
-
-  const calculateStrategicRoutingValue = useCallback((tags: any): number => {
-    if (!tags) return 0;
-    let value = 0;
-    if (tags.highway === 'give_way' || tags.highway === 'stop') value += 3;
-    if (tags.barrier === 'cattle_grid' || tags.barrier === 'height_restrictor') value += 4;
-    if (tags.highway === 'turning_circle' || tags.junction === 'roundabout') value += 2;
-    if (tags.place === 'hamlet' || tags.place === 'village' || tags.place === 'locality') value += 3;
-    return Math.min(value, 10);
-  }, []);
-
-  const determineRoutingPurpose = useCallback((tags: any): 'twisty_routing' | 'elevation_forcing' | 'scenic_bypass' | 'canyon_access' => {
-    if (!tags) return 'scenic_bypass';
-    if (tags.mountain_pass === 'yes' || tags.natural === 'pass') return 'elevation_forcing';
-    if (tags.natural === 'saddle' || tags.natural === 'ridge') return 'canyon_access';
-    if (tags.highway === 'tertiary' || tags.highway === 'unclassified') return 'twisty_routing';
-    return 'scenic_bypass';
-  }, []);
-
-  const generateStrategicRoutingName = useCallback((tags: any, elementType: string): string => {
-    if (!tags) return 'Unknown Point';
-    if (tags?.name) return `${tags.name}`;
-    if (tags?.highway) return `Twisty ${tags.highway.charAt(0).toUpperCase() + tags.highway.slice(1)} Route`;
-    if (tags?.natural === 'pass') return 'Mountain Pass Route';
-    if (tags?.natural === 'saddle') return 'Ridge Crossing Route';
-    if (tags?.place) return `${tags.place.charAt(0).toUpperCase() + tags.place.slice(1)} Bypass`;
-    return `Strategic Point`;
-  }, []);
-
-  const getStrategicRoutingDescription = useCallback((tags: any): string => {
-    if (!tags) return 'Unknown location';
-    const descriptions: Record<string, string> = {
-      'tertiary': 'Forces routing through narrow tertiary roads with curves and elevation changes',
-      'unclassified': 'Strategic routing through unclassified back roads for maximum twistiness',
-      'residential': 'Residential area routing to avoid main highways and add road variety',
-      'secondary': 'Secondary road routing with moderate twistiness and scenic value',
-      'mountain_pass': 'Mountain pass with switchbacks, hairpin turns, and dramatic elevation changes',
-      'pass': 'Natural pass forcing routing through twisty mountain terrain',
-      'saddle': 'Ridge saddle point creating winding approach roads',
-      'hamlet': 'Small settlement forcing routing through local roads',
-      'village': 'Village routing to utilize connecting country roads',
-      'locality': 'Local area requiring back road navigation'
-    };
-    for (const [key, description] of Object.entries(descriptions)) {
-      if (tags?.highway === key || tags?.natural === key || tags?.place === key) {
-        return description;
-      }
-    }
-    return 'Strategic routing point designed to force usage of twisty, scenic roads';
-  }, []);
-
-  const calculateDistance = useCallback((coord1?: { lat: number; lon: number }, coord2?: { lat: number; lon: number }): number => {
-    if (!coord1 || !coord2) return 0;
-    const R = 6371;
-    const dLat = (coord2.lat - coord1.lat) * Math.PI / 180;
-    const dLon = (coord2.lon - coord1.lon) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(coord1.lat * Math.PI / 180) * Math.cos(coord2.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  }, []);
-
-  // --- Waypoint Discovery & Processing ---
-
-  const findTwistyRoadWaypoints = useCallback(async (start: string, end: string): Promise<SuggestedWaypoint[]> => {
-    console.log('3. Finding twisty road waypoints...');
-    console.log('  - Start location:', start);
-    console.log('  - End location:', end);
-    try {
-      const bbox = await getEnhancedRouteBoundingBox(start, end);
-      if (!bbox) {
-        console.log('  - ❌ Failed to get bounding box. Check if start/end locations are valid.');
-        return [];
-      }
-      console.log('  - Using bounding box:', bbox);
-
-      // Split bbox into components for proper formatting
-      const [minLat, minLon, maxLat, maxLon] = bbox.split(',').map(Number);
-      
-      const overpassQuery = `
-[out:json][timeout:25];
-(
-  way["highway"~"^(tertiary|unclassified|residential)$"](${minLat},${minLon},${maxLat},${maxLon});
-  way["highway"="secondary"]["lanes"~"^(1|2)$"](${minLat},${minLon},${maxLat},${maxLon});
-  way["highway"]["mountain_pass"="yes"](${minLat},${minLon},${maxLat},${maxLon});
-  way["highway"~"^(tertiary|unclassified)$"]["surface"~"^(unpaved|gravel|dirt)$"](${minLat},${minLon},${maxLat},${maxLon});
-  node["highway"="give_way"](${minLat},${minLon},${maxLat},${maxLon});
-  node["highway"="stop"](${minLat},${minLon},${maxLat},${maxLon});
-  node["barrier"~"^(cattle_grid|height_restrictor)$"](${minLat},${minLon},${maxLat},${maxLon});
-  node["highway"="turning_circle"](${minLat},${minLon},${maxLat},${maxLon});
-  way["junction"="roundabout"](${minLat},${minLon},${maxLat},${maxLon});
-  node["place"~"^(hamlet|village)$"](${minLat},${minLon},${maxLat},${maxLon});
-  node["natural"~"^(saddle|pass|ridge)$"](${minLat},${minLon},${maxLat},${maxLon});
-);
-out body;
->;
-out skel qt;`;
-
-      console.log('  - Executing Overpass query...');
-      console.log('  - Query:', overpassQuery);
-      
-      const response = await fetch(`https://overpass-api.de/api/interpreter`, {
-        method: 'POST',
-        body: overpassQuery,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      });
-
-      console.log('  - Overpass API response status:', response.status);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log(`  - ✅ Overpass query successful. Found ${data.elements?.length || 0} potential elements.`);
-        
-        if ((data.elements?.length || 0) === 0) {
-          console.log('  - No elements returned from Overpass. Possible reasons:');
-          console.log('    1. The query might be too restrictive');
-          console.log('    2. The area might not have any matching features');
-          console.log('    3. The bounding box might be too small');
-          console.log('    4. The start/end locations might be too close together');
-          return [];
-        }
-
-        // Filter out elements without tags first
-        const validElements = data.elements?.filter((element: any) => element && element.tags) || [];
-        console.log(`  - Found ${validElements.length} elements with valid tags`);
-
-        const waypoints = validElements.map((element: any) => {
-          try {
-            const name = generateStrategicRoutingName(element.tags, element.type);
-            const lat = element.lat || (element.bounds ? (element.bounds.minlat + element.bounds.maxlat) / 2 : 0);
-            const lon = element.lon || (element.bounds ? (element.bounds.minlon + element.bounds.maxlon) / 2 : 0);
-            
-            const twistiness = calculateRoadTwistiness(element);
-            const strategicValue = calculateStrategicRoutingValue(element.tags);
-            
-            return {
-              id: `twisty-${element.id}`,
-              location: name,
-              description: getStrategicRoutingDescription(element.tags),
-              checked: true,
-              type: 'strategic_routing',
-              coordinates: { lat, lon },
-              roadType: element.tags?.highway || 'unknown',
-              twistiness: twistiness,
-              strategicValue: strategicValue,
-              routingPurpose: determineRoutingPurpose(element.tags),
-              score: twistiness * strategicValue,
-            };
-          } catch (error) {
-            console.log('  - Error processing element:', error);
-            return null;
-          }
-        }).filter((w: any): w is SuggestedWaypoint => w !== null && w.twistiness > 3);
-
-        console.log(`  - After filtering for twistiness > 3: ${waypoints.length} waypoints remaining`);
-        return waypoints;
-      } else {
-        console.error(`  - ❌ Overpass API request failed with status: ${response.status}`);
-        const errorBody = await response.text();
-        console.error('  - Error body:', errorBody);
-      }
-    } catch (error) {
-      console.log('  - ❌ Advanced OSM query fetch failed:', error);
-    }
-    return [];
-  }, [getEnhancedRouteBoundingBox, generateStrategicRoutingName, calculateRoadTwistiness, calculateStrategicRoutingValue, getStrategicRoutingDescription, determineRoutingPurpose]);
-
-  const optimizeForTwistyRouting = useCallback((waypoints: SuggestedWaypoint[]): SuggestedWaypoint[] => {
-    console.log(`4. Optimizing and filtering ${waypoints.length} waypoints...`);
-    const sorted = waypoints.sort((a, b) => (b.score || 0) - (a.score || 0));
-    const finalWaypoints = sorted.filter((waypoint, index) => {
-      if ((waypoint.score || 0) > 50) return true;
-      if (index < 5) return true;
-      const selected = sorted.slice(0, index);
-      return !selected.some(selectedWp => 
-        calculateDistance(waypoint.coordinates, selectedWp.coordinates) < 15
-      );
+  const onMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+    directionsRendererRef.current = new google.maps.DirectionsRenderer({
+      map,
+      suppressMarkers: true,
     });
-    console.log(`  - ✅ Optimization complete. Final waypoint count: ${finalWaypoints.length}`);
-    return finalWaypoints;
-  }, [calculateDistance]);
-  
-  const findScenicWaypoints = useCallback(async (start: string, end: string): Promise<SuggestedWaypoint[]> => {
-    if (!start || !end) return [];
+  }, []);
+
+  const handleSearch = useCallback(async () => {
+    if (!route.start || !route.end) {
+      return;
+    }
+
     setIsLoadingSuggestions(true);
+    setRouteOptions([]);
+    setSelectedRouteIndex(null);
+    console.log('--- Initiating Scenic Waypoint Discovery ---');
+    console.log(`Searching for twisty roads between: "${route.start}" and "${route.end}"`);
+
     try {
-      console.log('--- Initiating Scenic Waypoint Discovery ---');
-      console.log(`Searching for twisty roads between: "${start}" and "${end}"`);
-      const twistyRoads = await findTwistyRoadWaypoints(start, end);
+      const twistyRoads = await findTwistyRoadWaypoints(route.start, route.end);
       
       if (!twistyRoads || twistyRoads.length === 0) {
         console.log('No twisty road waypoints found. Aborting optimization.');
-        return [];
-      }
-      
-      const strategicallyPlaced = optimizeForTwistyRouting(twistyRoads);
-      console.log('--- Scenic Waypoint Discovery Finished ---');
-      return strategicallyPlaced.slice(0, 10);
+      } else {
+        const startCoords = await geocodeLocation(route.start);
+        const endCoords = await geocodeLocation(route.end);
 
+        if (startCoords && endCoords) {
+          const options = generateRouteOptions(twistyRoads, startCoords, endCoords);
+          const optionsWithChecked = options.map(opt => ({
+            ...opt,
+            waypoints: opt.waypoints.map(wp => ({ ...wp, checked: true }))
+          }));
+          console.log('--- Scenic Waypoint Discovery Finished ---');
+          setRouteOptions(optionsWithChecked);
+          if (optionsWithChecked.length > 0) {
+            setSelectedRouteIndex(0);
+          }
+        }
+      }
     } catch (error) {
       console.log('❌ Top-level strategic waypoint discovery failed:', error);
-      return [];
     } finally {
       setIsLoadingSuggestions(false);
     }
-  }, [findTwistyRoadWaypoints, optimizeForTwistyRouting]);
+  }, [route.start, route.end]);
 
-  // --- Main App Logic & State ---
+  const activeWaypoints = selectedRouteIndex !== null ? routeOptions[selectedRouteIndex]?.waypoints.filter(wp => wp.checked) : [];
 
   useEffect(() => {
-    const handler = setTimeout(async () => {
-      if (route.start && route.end && route.start.length > 3 && route.end.length > 3) {
-        console.log('🏁 useEffect triggered: Start and end locations are present. Searching for waypoints...');
-        const newSuggestions = await findScenicWaypoints(route.start, route.end);
-        setSuggestedWaypoints(newSuggestions);
-      } else {
-        console.log('useEffect triggered: Start or end location is missing. Clearing suggestions.');
-        setSuggestedWaypoints([]);
+    const renderRoute = async () => {
+      if (!directionsRendererRef.current) {
+        return;
       }
-    }, 1000);
 
-    return () => clearTimeout(handler);
-  }, [route.start, route.end, findScenicWaypoints]);
+      markersRef.current.forEach(marker => marker.setMap(null));
+      markersRef.current = [];
+
+      if (!route.start || !route.end || activeWaypoints.length === 0) {
+        directionsRendererRef.current.setDirections(null);
+        return;
+      }
+
+      const directionsService = new google.maps.DirectionsService();
+
+      const waypoints = activeWaypoints
+        .filter((wp): wp is SuggestedWaypoint & { coordinates: { lat: number; lon: number } } => 
+          wp.coordinates !== undefined && 
+          typeof wp.coordinates.lat === 'number' && 
+          typeof wp.coordinates.lon === 'number'
+        )
+        .map(wp => ({
+          location: new google.maps.LatLng(wp.coordinates.lat, wp.coordinates.lon),
+          stopover: true
+        }));
+
+      const request: google.maps.DirectionsRequest = {
+        origin: route.start,
+        destination: route.end,
+        waypoints,
+        optimizeWaypoints: false,
+        travelMode: google.maps.TravelMode.DRIVING,
+      };
+
+      try {
+        const result = await directionsService.route(request);
+        if (result.routes.length > 0) {
+          directionsRendererRef.current.setDirections(result);
+
+          const bounds = new google.maps.LatLngBounds();
+          result.routes[0].legs.forEach(leg => {
+            leg.steps.forEach(step => {
+              step.path.forEach(latlng => {
+                bounds.extend(latlng);
+              });
+            });
+          });
+
+          if(mapRef.current) {
+              mapRef.current.fitBounds(bounds);
+
+              const startMarker = new google.maps.Marker({
+                position: result.routes[0].legs[0].start_location,
+                map: mapRef.current,
+                title: 'Start',
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: '#4CAF50',
+                  fillOpacity: 1,
+                  strokeColor: '#FFFFFF',
+                  strokeWeight: 2
+                }
+              });
+              markersRef.current.push(startMarker);
+
+              activeWaypoints.forEach((wp, index) => {
+                if (!wp.coordinates) return;
+                const waypointMarker = new google.maps.Marker({
+                  position: new google.maps.LatLng(wp.coordinates.lat, wp.coordinates.lon),
+                  map: mapRef.current,
+                  title: wp.location,
+                  label: {
+                    text: (index + 1).toString(),
+                    color: '#FFFFFF'
+                  },
+                  icon: {
+                    path: google.maps.SymbolPath.CIRCLE,
+                    scale: 8,
+                    fillColor: '#FF9800',
+                    fillOpacity: 1,
+                    strokeColor: '#FFFFFF',
+                    strokeWeight: 2
+                  }
+                });
+                markersRef.current.push(waypointMarker);
+              });
+
+              const endMarker = new google.maps.Marker({
+                position: result.routes[0].legs[result.routes[0].legs.length - 1].end_location,
+                map: mapRef.current,
+                title: 'End',
+                icon: {
+                  path: google.maps.SymbolPath.CIRCLE,
+                  scale: 8,
+                  fillColor: '#F44336',
+                  fillOpacity: 1,
+                  strokeColor: '#FFFFFF',
+                  strokeWeight: 2
+                }
+              });
+              markersRef.current.push(endMarker);
+          }
+        } else {
+          console.error('Directions request failed: No routes found');
+          directionsRendererRef.current.setDirections(null);
+        }
+      } catch (e) {
+        console.error('Error calculating route:', e);
+        if (directionsRendererRef.current) {
+            directionsRendererRef.current.setDirections(null);
+        }
+      }
+    };
+
+    renderRoute();
+  }, [activeWaypoints, route.start, route.end]);
+
+  // --- Main App Logic & State ---
 
   const addWaypoint = () => {
     setRoute(prev => ({
@@ -384,11 +222,37 @@ out skel qt;`;
   };
 
   const toggleSuggestedWaypoint = (id: string) => {
-    setSuggestedWaypoints(prev => 
-      prev.map(wp => wp.id === id ? { ...wp, checked: !wp.checked } : wp)
-    );
+    if (selectedRouteIndex === null) return;
+    
+    setRouteOptions(prev => {
+      const newOptions = [...prev];
+      const waypoints = newOptions[selectedRouteIndex].waypoints;
+      const wpIndex = waypoints.findIndex(wp => wp.id === id);
+      if (wpIndex > -1) {
+        waypoints[wpIndex].checked = !waypoints[wpIndex].checked;
+      }
+      return newOptions;
+    });
   };
   
+  const handleGenerateRoute = () => {
+    if (!route.start || !route.end) {
+      alert('Please enter both start and end locations');
+      return;
+    }
+
+    const waypointsForUrl = [
+        ...activeWaypoints.map(wp => wp.coordinates ? {lat: wp.coordinates.lat, lon: wp.coordinates.lon} : wp.location),
+        ...route.waypoints.filter(wp => wp.location).map(wp => wp.location)
+    ];
+
+    const googleUrl = generateRouteURL(waypointsForUrl);
+    setRouteUrl(googleUrl);
+
+    const wazeDestination = route.waypoints.length > 0 ? route.waypoints[0].location : route.end;
+    setWazeUrl(`https://waze.com/ul?q=${encodeURIComponent(wazeDestination)}&navigate=yes`);
+  };
+
   const generateRouteURL = (waypoints: (string | {lat: number, lon: number})[]) => {
     const locations = [
       route.start,
@@ -412,28 +276,9 @@ out skel qt;`;
     return url;
   }
 
-  const handleGenerateRoute = () => {
-    if (!route.start || !route.end) {
-      alert('Please enter both start and end locations');
-      return;
-    }
-
-    const waypointsForUrl = [
-        ...suggestedWaypoints.filter(wp => wp.checked).map(wp => wp.coordinates ? {lat: wp.coordinates.lat, lon: wp.coordinates.lon} : wp.location),
-        ...route.waypoints.filter(wp => wp.location).map(wp => wp.location)
-    ];
-
-    const googleUrl = generateRouteURL(waypointsForUrl);
-    setRouteUrl(googleUrl);
-
-    // Waze can't handle multiple waypoints well, so we generate a direct route and segmented routes.
-    const wazeDestination = route.waypoints.length > 0 ? route.waypoints[0].location : route.end;
-    setWazeUrl(`https://waze.com/ul?q=${encodeURIComponent(wazeDestination)}&navigate=yes`);
-  };
-
   const generateWazeSegments = () => {
     const allWaypoints = [
-        ...suggestedWaypoints.filter(wp => wp.checked).map(wp => wp.location),
+        ...activeWaypoints.map(wp => wp.location),
         ...route.waypoints.filter(wp => wp.location).map(wp => wp.location)
     ];
     if (allWaypoints.length === 0) return [];
@@ -456,7 +301,10 @@ out skel qt;`;
     return segments;
   };
 
-  const checkedSuggestionsCount = suggestedWaypoints.filter(wp => wp.checked).length;
+  const checkedSuggestionsCount = activeWaypoints.length;
+
+  // Create a ref for the map container div
+  const mapContainerRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="app-container">
@@ -481,6 +329,7 @@ out skel qt;`;
                     type="text"
                     value={route.start}
                     onChange={(e) => setRoute(prev => ({ ...prev, start: e.target.value }))}
+                    onBlur={handleSearch}
                     placeholder="Enter starting location"
                   />
                 </div>
@@ -492,16 +341,16 @@ out skel qt;`;
                     type="text"
                     value={route.end}
                     onChange={(e) => setRoute(prev => ({ ...prev, end: e.target.value }))}
+                    onBlur={handleSearch}
                     placeholder="Enter destination"
                   />
                 </div>
               </div>
 
-              {(suggestedWaypoints.length > 0 || isLoadingSuggestions) && (
+              {(routeOptions.length > 0 || isLoadingSuggestions) && (
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                   <h3 className="text-lg font-medium text-blue-800 mb-3">
-                    🎯 Strategic Twisty Road Suggestions
-                    {!isLoadingSuggestions && ` (${checkedSuggestionsCount}/${suggestedWaypoints.length} selected)`}
+                    🎯 Suggested Route Options
                   </h3>
                   
                   {isLoadingSuggestions ? (
@@ -510,26 +359,42 @@ out skel qt;`;
                       <div className="text-blue-600 font-medium">Analyzing roads for maximum twistiness...</div>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {suggestedWaypoints.map((suggestion) => (
-                        <div key={suggestion.id} className="flex items-start justify-between bg-white p-3 rounded border hover:border-blue-300 transition-colors">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-1">
-                              <div className="text-sm font-medium text-gray-800">{suggestion.location}</div>
-                              <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded">
-                                Twistiness: {Math.round(suggestion.score || 0)}
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-600">{suggestion.description}</p>
-                          </div>
-                          <input 
-                            type="checkbox"
-                            checked={suggestion.checked}
-                            onChange={() => toggleSuggestedWaypoint(suggestion.id)}
-                            className="h-5 w-5 ml-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
+                    <div className="space-y-3">
+                      {routeOptions.map((option, index) => (
+                        <div 
+                          key={index}
+                          className={`route-option-card ${selectedRouteIndex === index ? 'selected' : ''}`}
+                          onClick={() => setSelectedRouteIndex(index)}
+                        >
+                          <div className="font-bold text-lg">{option.name}</div>
+                          <div className="text-sm">{option.waypoints.length} waypoints</div>
                         </div>
                       ))}
+                      
+                      {selectedRouteIndex !== null && (
+                        <div className="waypoint-list">
+                           <h4 className="text-md font-semibold text-gray-800 mt-4 mb-2">
+                            Customize Waypoints for "{routeOptions[selectedRouteIndex].name}"
+                          </h4>
+                          {routeOptions[selectedRouteIndex].waypoints.map((suggestion) => (
+                            <div key={suggestion.id} className="waypoint-item">
+                              <div className="flex-1">
+                                <div className="waypoint-location">{suggestion.location}</div>
+                                <p className="waypoint-description">{suggestion.description}</p>
+                              </div>
+                               <span className="waypoint-score">
+                                Twistiness: {Math.round(suggestion.twistiness || 0)}
+                              </span>
+                              <input 
+                                type="checkbox"
+                                checked={suggestion.checked}
+                                onChange={() => toggleSuggestedWaypoint(suggestion.id)}
+                                className="waypoint-checkbox"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -576,18 +441,15 @@ out skel qt;`;
                     <input type="checkbox" id="avoidTolls" checked={preferences.avoidTolls} onChange={(e) => setPreferences(prev => ({ ...prev, avoidTolls: e.target.checked }))} className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"/>
                     <label htmlFor="avoidTolls" className="ml-2 text-sm text-green-700">💰 Avoid toll roads</label>
                   </div>
-                  <div className="flex items-center">
-                    <input type="checkbox" id="favorScenicRoads" checked={preferences.favorScenicRoads} onChange={(e) => setPreferences(prev => ({ ...prev, favorScenicRoads: e.target.checked }))} className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"/>
-                    <label htmlFor="favorScenicRoads" className="ml-2 text-sm text-green-700">🌊 Auto-suggest scenic waypoints</label>
-                  </div>
                 </div>
               </div>
 
               <button
                 onClick={handleGenerateRoute}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium"
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium mt-4"
+                disabled={activeWaypoints.length === 0 && route.waypoints.length === 0}
               >
-                Generate Scenic Route {checkedSuggestionsCount > 0 && `(${checkedSuggestionsCount + route.waypoints.filter(wp => wp.location).length} waypoints)`}
+                Generate Scenic Route ({checkedSuggestionsCount + route.waypoints.filter(wp => wp.location).length} waypoints)
               </button>
             </div>
           </div>
@@ -650,17 +512,8 @@ out skel qt;`;
           start={route.start}
           end={route.end}
           waypoints={route.waypoints}
-          suggestedWaypoints={suggestedWaypoints}
-          onWaypointAdd={(location) => {
-            setRoute(prev => ({
-              ...prev,
-              waypoints: [...prev.waypoints, { id: Date.now().toString(), location }]
-            }));
-          }}
-          onWaypointUpdate={updateWaypoint}
-          onWaypointRemove={removeWaypoint}
-          onSuggestedWaypointToggle={toggleSuggestedWaypoint}
-          preferences={preferences}
+          suggestedWaypoints={activeWaypoints}
+          onLoad={onMapLoad}
         />
       </div>
     </div>

@@ -14,3 +14,50 @@
   flex: 2;
   height: 100%;
 }
+
+/* Location Controls Styling */
+.location-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.location-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.location-input-group label {
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.875rem;
+}
+
+.location-input-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #E5E7EB;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  transition: all 0.2s;
+  background-color: white;
+}
+
+.location-input-group input:focus {
+  outline: none;
+  border-color: #3B82F6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.location-input-group input::placeholder {
+  color: #9CA3AF;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .location-controls {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,48 +1,40 @@
-import React, { useRef, useEffect, useCallback } from 'react';
-import { Route, SuggestedWaypoint } from './types';
+import React from 'react';
+import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
+import { SuggestedWaypoint } from './types';
 
 interface MapProps {
-  start: string;
-  end: string;
-  waypoints: { id: string; location: string }[];
-  suggestedWaypoints: SuggestedWaypoint[];
   onLoad: (map: google.maps.Map) => void;
 }
 
-const InteractiveMap: React.FC<MapProps> = ({
-  start,
-  end,
-  waypoints,
-  suggestedWaypoints,
-  onLoad,
-}) => {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const googleMapRef = useRef<google.maps.Map | null>(null);
+const containerStyle = {
+  width: '100%',
+  height: '100vh'
+};
 
-  const initMap = useCallback(() => {
-    if (googleMapRef.current) return;
+const defaultCenter = {
+  lat: 32.7157,  // San Diego
+  lng: -117.1611
+};
 
-    const mapOptions = {
-      center: { lat: 34.0522, lng: -118.2437 },
-      zoom: 8,
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
-    };
-    if (mapRef.current) {
-      const map = new google.maps.Map(mapRef.current, mapOptions);
-      googleMapRef.current = map;
-      onLoad(map);
-    }
-  }, [onLoad]);
+const InteractiveMap: React.FC<MapProps> = ({ onLoad }) => {
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY || ''
+  });
 
-  useEffect(() => {
-    if (window.google) {
-      initMap();
-    }
-  }, [initMap]);
-
-  return <div ref={mapRef} style={{ width: '100%', height: '100%' }} />;
+  return isLoaded ? (
+    <GoogleMap
+      mapContainerStyle={containerStyle}
+      center={defaultCenter}
+      zoom={8}
+      onLoad={onLoad}
+      options={{
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+      }}
+    />
+  ) : <div />;
 };
 
 export default InteractiveMap; 

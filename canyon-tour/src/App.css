@@ -61,3 +61,78 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Route Option Card Styling */
+.route-option-card {
+  background-color: white;
+  padding: 1rem 1.5rem;
+  border-radius: 0.75rem;
+  border: 2px solid #e5e7eb;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  margin-bottom: 0.75rem;
+}
+
+.route-option-card:hover {
+  border-color: #93c5fd;
+  transform: translateY(-2px);
+}
+
+.route-option-card.selected {
+  border-color: #3b82f6;
+  background-color: #eff6ff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+/* Waypoint List Styling */
+.waypoint-list {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.waypoint-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #ffffff;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid #f3f4f6;
+  margin-bottom: 0.5rem;
+  transition: border-color 0.2s;
+}
+
+.waypoint-item:hover {
+  border-color: #d1d5db;
+}
+
+.waypoint-location {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.waypoint-description {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 0.1rem;
+}
+
+.waypoint-score {
+  font-size: 0.8rem;
+  font-weight: 500;
+  background-color: #e0f2fe;
+  color: #0c4a6e;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  margin-left: 1rem;
+}
+
+.waypoint-checkbox {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 1.5rem;
+  border-radius: 0.25rem;
+  border-color: #d1d5db;
+  color: #3b82f6;
+}

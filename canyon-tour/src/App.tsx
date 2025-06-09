@@ -509,10 +509,6 @@ function App() {
       </div>
       <div className="map-container">
         <InteractiveMap
-          start={route.start}
-          end={route.end}
-          waypoints={route.waypoints}
-          suggestedWaypoints={activeWaypoints}
           onLoad={onMapLoad}
         />
       </div>

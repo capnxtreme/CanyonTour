@@ -1,174 +1,272 @@
-import { Coordinates, SuggestedWaypoint } from "../types";
+import { SuggestedWaypoint, Coordinates, RouteOption } from '../types';
+const geolib = require('geolib');
 
-type RouteStrategy = 'twisty' | 'balanced' | 'direct';
+const MAX_WAYPOINTS = 10;
+const STRATEGIES = ['Twisty', 'Balanced', 'Direct'];
 
-const STRATEGY_CONFIG = {
-  twisty: {
-    twistinessWeight: 0.7,
-    progressWeight: 0.3,
-    distanceThreshold: 5,
-  },
-  balanced: {
-    twistinessWeight: 0.5,
-    progressWeight: 0.5,
-    distanceThreshold: 10,
-  },
-  direct: {
-    twistinessWeight: 0.3,
-    progressWeight: 0.7,
-    distanceThreshold: 15,
-  },
-};
-
-export const calculateDistance = (coord1?: { lat: number; lon: number }, coord2?: { lat: number; lon: number }): number => {
-    if (!coord1 || !coord2) return 0;
-    const R = 6371;
-    const dLat = (coord2.lat - coord1.lat) * Math.PI / 180;
-    const dLon = (coord2.lon - coord1.lon) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(coord1.lat * Math.PI / 180) * Math.cos(coord2.lat * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-
-export const getStrategicRoutingDescription = (tags: any): string => {
-if (!tags) return 'Unknown location';
-const descriptions: Record<string, string> = {
-    'tertiary': 'Forces routing through narrow tertiary roads with curves and elevation changes',
-    'unclassified': 'Strategic routing through unclassified back roads for maximum twistiness',
-    'residential': 'Residential area routing to avoid main highways and add road variety',
-    'secondary': 'Secondary road routing with moderate twistiness and scenic value',
-    'mountain_pass': 'Mountain pass with switchbacks, hairpin turns, and dramatic elevation changes',
-    'pass': 'Natural pass forcing routing through twisty mountain terrain',
-    'saddle': 'Ridge saddle point creating winding approach roads',
-    'hamlet': 'Small settlement forcing routing through local roads',
-    'village': 'Village routing to utilize connecting country roads',
-    'locality': 'Local area requiring back road navigation'
-};
-for (const [key, description] of Object.entries(descriptions)) {
-    if (tags?.highway === key || tags?.natural === key || tags?.place === key) {
-    return description;
-    }
+/**
+* Calculates the great-circle distance between two coordinates.
+* @param coord1 - The first coordinate.
+* @param coord2 - The second coordinate.
+* @returns The distance in meters.
+*/
+export function calculateDistance(coord1: Coordinates, coord2: Coordinates): number {
+    return geolib.getDistance(coord1, coord2);
 }
-return 'Strategic routing point designed to force usage of twisty, scenic roads';
-};
 
-const optimizeRouteByStrategy = (
-  waypoints: SuggestedWaypoint[],
-  startCoords: Coordinates,
-  endCoords: Coordinates,
-  strategy: RouteStrategy
-): SuggestedWaypoint[] => {
-  const config = STRATEGY_CONFIG[strategy];
-  const { twistinessWeight, progressWeight, distanceThreshold } = config;
-
-  const projectToRoute = (point: Coordinates) => {
-    const directionVector = {
-      lat: endCoords.lat - startCoords.lat,
-      lon: endCoords.lon - startCoords.lon,
-    };
-    const pointVector = {
-      lat: point.lat - startCoords.lat,
-      lon: point.lon - startCoords.lon,
-    };
-    const magnitude = directionVector.lat * directionVector.lat + directionVector.lon * directionVector.lon;
-    if (magnitude === 0) return 0;
-    const dotProduct = pointVector.lat * directionVector.lat + pointVector.lon * directionVector.lon;
-    return dotProduct / magnitude;
-  };
-
-  const waypointsWithProjection = waypoints
-    .map(wp => ({
-      ...wp,
-      projection: wp.coordinates ? projectToRoute(wp.coordinates) : -1,
-    }))
-    .filter(wp => wp.projection >= -0.1 && wp.projection <= 1.1); // Allow some leeway
-
-  const directDistance = calculateDistance(startCoords, endCoords);
-
-  let sortedWaypoints = waypointsWithProjection.sort((a, b) => {
-    const scoreA = (a.twistiness || 0) * twistinessWeight + a.projection * progressWeight;
-    const scoreB = (b.twistiness || 0) * twistinessWeight + b.projection * progressWeight;
-    return scoreB - scoreA;
-  });
-
-  const optimizedWaypoints: (SuggestedWaypoint & { projection: number })[] = [];
-  let lastProjection = 0;
-
-  while (optimizedWaypoints.length < 10 && sortedWaypoints.length > 0) {
-    let bestCandidate: (SuggestedWaypoint & { projection: number }) | null = null;
-    let bestCandidateIndex = -1;
-
-    for (let i = 0; i < sortedWaypoints.length; i++) {
-      const candidate = sortedWaypoints[i];
-      if (!candidate.coordinates) continue;
-
-      const distFromStart = calculateDistance(candidate.coordinates, startCoords);
-      const distFromEnd = calculateDistance(candidate.coordinates, endCoords);
-      if (distFromStart < distanceThreshold || distFromEnd < distanceThreshold) continue;
-
-      const tooCloseToOthers = optimizedWaypoints.some(
-        (wp) => calculateDistance(wp.coordinates, candidate.coordinates) < distanceThreshold
-      );
-      if (tooCloseToOthers) continue;
-
-      if (candidate.projection > lastProjection) {
-        bestCandidate = candidate;
-        bestCandidateIndex = i;
-        break;
-      }
-    }
-
-    if (bestCandidate) {
-      optimizedWaypoints.push(bestCandidate);
-      lastProjection = bestCandidate.projection;
-      sortedWaypoints.splice(bestCandidateIndex, 1);
+/**
+ * Generates a strategic routing description based on OSM tags.
+ * @param tags - The OSM tags object.
+ * @returns A descriptive string for the waypoint.
+ */
+export function getStrategicRoutingDescription(tags: any): string {
+    if (!tags) return 'Scenic waypoint';
+    
+    const highway = tags.highway;
+    const name = tags.name;
+    const ref = tags.ref;
+    
+    let description = '';
+    
+    if (highway) {
+        switch (highway) {
+            case 'tertiary':
+                description = 'Scenic tertiary road';
+                break;
+            case 'secondary':
+                description = 'Winding secondary road';
+                break;
+            case 'unclassified':
+                description = 'Quiet country road';
+                break;
+            case 'residential':
+                description = 'Local residential route';
+                break;
+            default:
+                description = `${highway} road`;
+        }
     } else {
-      break;
+        description = 'Scenic route';
     }
-  }
+    
+    if (name) {
+        description += ` (${name})`;
+    } else if (ref) {
+        description += ` ${ref}`;
+    }
+    
+    return description;
+}
 
-  const finalWaypoints = optimizedWaypoints
-    .sort((a, b) => a.projection - b.projection)
-    .map(({ projection, ...wp }) => wp);
 
-  return finalWaypoints;
-};
+/**
+ * Scores a route segment based on its twistiness and detour cost.
+ * Higher scores are better.
+ * @param waypoint - The candidate waypoint.
+ * @param currentPosition - The current location in the route.
+ * @param end - The final destination.
+ * @param baseDistance - The direct distance from current to end.
+ * @param strategy - The routing strategy.
+ * @returns The score for the waypoint.
+ */
+function scoreWaypoint(
+    waypoint: SuggestedWaypoint,
+    currentPosition: Coordinates,
+    end: Coordinates,
+    baseDistance: number,
+    strategy: 'Twisty' | 'Balanced' | 'Direct'
+): number {
+    if (!waypoint.coordinates) {
+        return -Infinity; // Skip waypoints without coordinates
+    }
+    const distanceToWaypoint = calculateDistance(currentPosition, waypoint.coordinates);
+    const distanceFromWaypointToEnd = calculateDistance(waypoint.coordinates, end);
+    const detourDistance = distanceToWaypoint + distanceFromWaypointToEnd - baseDistance;
 
-export const generateRouteOptions = (
-  waypoints: SuggestedWaypoint[],
-  startCoords: Coordinates,
-  endCoords: Coordinates
-) => {
-  console.log('4. Generating route options...');
+    // Hard constraint: do not pick a waypoint that takes us further from the destination
+    if (distanceFromWaypointToEnd > baseDistance) {
+        return -Infinity;
+    }
 
-  const twistyWaypoints = optimizeRouteByStrategy(waypoints, startCoords, endCoords, 'twisty');
+    // Softer constraint: heavily penalize detours, but allow them if the twistiness is high enough
+    let detourPenalty = detourDistance;
+    if (strategy === 'Twisty') {
+        // For the 'Twisty' strategy, we are more tolerant of detours if they are scenic.
+        // We can reduce the penalty, making scenic routes more attractive.
+        // A smaller divisor here means a larger penalty for detours, so we use a larger one for 'Twisty'.
+        detourPenalty = detourDistance / 2; // more tolerant of detours
+    } else if (strategy === 'Balanced') {
+        detourPenalty = detourDistance; // moderately tolerant
+    } else { // Direct
+        detourPenalty = detourDistance * 2; // heavily penalize detours
+    }
+    
+    // The score is a combination of the waypoint's intrinsic scenic value (twistiness)
+    // and the cost of the detour. We want high twistiness and low detour cost.
+    const score = (waypoint.twistiness || 0) - detourPenalty;
 
-  const remainingAfterTwisty = waypoints.filter(
-    (wp) => !twistyWaypoints.some((twp) => twp.id === wp.id)
-  );
+    return score;
+}
 
-  const balancedWaypoints = optimizeRouteByStrategy(remainingAfterTwisty, startCoords, endCoords, 'balanced');
 
-  const remainingAfterBalanced = remainingAfterTwisty.filter(
-    (wp) => !balancedWaypoints.some((bwp) => bwp.id === wp.id)
-  );
-  
-  const directWaypoints = optimizeRouteByStrategy(remainingAfterBalanced, startCoords, endCoords, 'direct');
+/**
+ * Selects the best next waypoint from a list of available waypoints based on the chosen strategy.
+ * @param availableWaypoints - The list of waypoints to choose from.
+ * @param currentPosition - The current location.
+ * @param end - The final destination.
+ * @param strategy - The routing strategy.
+ * @param previousAngle - The angle of the last segment, used to avoid doubling back.
+ * @returns The best waypoint to visit next, or null if none are suitable.
+ */
+function selectNextWaypoint(
+    availableWaypoints: SuggestedWaypoint[],
+    currentPosition: Coordinates,
+    end: Coordinates,
+    strategy: 'Twisty' | 'Balanced' | 'Direct',
+    isFirstWaypoint: boolean
+): SuggestedWaypoint | null {
+    let bestWaypoint: SuggestedWaypoint | null = null;
+    let maxScore = -Infinity;
 
-  const finalOptions = [
-    { name: 'Most Twisty', waypoints: twistyWaypoints.slice(0, 10) },
-    { name: 'Balanced', waypoints: balancedWaypoints.slice(0, 10) },
-    { name: 'Direct & Scenic', waypoints: directWaypoints.slice(0, 10) },
-  ].filter(option => option.waypoints.length > 2); // Ensure options have a minimum number of waypoints
+    const baseDistance = calculateDistance(currentPosition, end);
+    
+    const scoreAndSelect = (waypoint: SuggestedWaypoint) => {
+        const score = scoreWaypoint(waypoint, currentPosition, end, baseDistance, strategy);
+        if (score > maxScore) {
+            maxScore = score;
+            bestWaypoint = waypoint;
+        }
+    };
 
-  console.log('  - ✅ Route option generation complete. Found:', finalOptions.length, 'options');
-  return finalOptions;
-};
+    // Special check for the first waypoint to prevent starting in the wrong direction.
+    if (isFirstWaypoint) {
+        const startToEndVector = {
+            x: end.lon - currentPosition.lon,
+            y: end.lat - currentPosition.lat
+        };
 
-export const optimizeForTwistyRouting = (waypoints: SuggestedWaypoint[], startCoords: Coordinates, endCoords: Coordinates): SuggestedWaypoint[] => {
-  console.warn("DEPRECATED: optimizeForTwistyRouting is deprecated. Use generateRouteOptions instead.");
-  return optimizeRouteByStrategy(waypoints, startCoords, endCoords, 'balanced');
-};
+        availableWaypoints.forEach(waypoint => {
+            if (!waypoint.coordinates) return; // Skip waypoints without coordinates
+            const startToWaypointVector = {
+                x: waypoint.coordinates.lon - currentPosition.lon,
+                y: waypoint.coordinates.lat - currentPosition.lat
+            };
+            
+            // Using dot product to check if the waypoint is roughly in the same direction as the destination
+            const dotProduct = startToEndVector.x * startToWaypointVector.x + startToEndVector.y * startToWaypointVector.y;
+            
+            if (dotProduct > 0) { // Waypoint is generally towards the destination
+                scoreAndSelect(waypoint);
+            }
+        });
+    } else {
+         availableWaypoints.forEach(scoreAndSelect);
+    }
+
+    return bestWaypoint;
+}
+
+
+/**
+ * Generates a single route based on a specific strategy.
+ * @param allWaypoints - All available suggested waypoints.
+ * @param start - The starting coordinates.
+ * @param end - The final destination.
+ * @param strategy - The routing strategy to use.
+ * @returns A generated route option.
+ */
+function generateRoute(
+    allWaypoints: SuggestedWaypoint[],
+    start: Coordinates,
+
+    end: Coordinates,
+    strategy: 'Twisty' | 'Balanced' | 'Direct'
+): RouteOption {
+    let currentPosition = start;
+    const route: SuggestedWaypoint[] = [];
+    let availableWaypoints = [...allWaypoints];
+    let isFirstWaypoint = true;
+
+    while (route.length < MAX_WAYPOINTS) {
+        const nextWaypoint = selectNextWaypoint(
+            availableWaypoints,
+            currentPosition,
+            end,
+            strategy,
+            isFirstWaypoint
+        );
+
+        if (!nextWaypoint) {
+            break; // No more suitable waypoints found
+        }
+        
+        route.push(nextWaypoint);
+        currentPosition = nextWaypoint.coordinates!; // We know it exists because selectNextWaypoint checks
+        availableWaypoints = availableWaypoints.filter(w => w.id !== nextWaypoint.id);
+        isFirstWaypoint = false;
+    }
+
+    const totalDistance = calculateTotalDistance([start, ...route.map(r => r.coordinates!), end]);
+    const totalTwistiness = route.reduce((sum, wp) => sum + (wp.twistiness || 0), 0);
+
+    return {
+        name: `${strategy} Route`,
+        waypoints: route,
+        start,
+        end,
+        totalDistance,
+        totalTwistiness
+    };
+}
+
+/**
+ * Generates multiple route options based on different strategies.
+ * @param allWaypoints - All available suggested waypoints.
+ * @param start - The starting coordinates.
+ * @param end - The final destination.
+ * @returns An array of generated route options.
+ */
+export function generateRouteOptions(
+    allWaypoints: SuggestedWaypoint[],
+    start: Coordinates,
+    end: Coordinates
+): RouteOption[] {
+    const options: RouteOption[] = [];
+
+    for (const strategy of STRATEGIES) {
+        const route = generateRoute(allWaypoints, start, end, strategy as 'Twisty' | 'Balanced' | 'Direct');
+        if (route.waypoints.length > 0) {
+            options.push(route);
+        }
+    }
+
+    // If no routes were generated (e.g., all waypoints were unsuitable),
+    // create a direct route as a fallback.
+    if (options.length === 0) {
+        const directDistance = calculateTotalDistance([start, end]);
+        options.push({
+            name: 'Direct Route',
+            waypoints: [],
+            start,
+            end,
+            totalDistance: directDistance,
+            totalTwistiness: 0,
+        });
+    }
+
+    return options;
+}
+
+/**
+ * Calculates the total distance of a route.
+ * @param locations - An array of coordinates representing the route.
+ * @returns The total distance in meters.
+ */
+function calculateTotalDistance(locations: Coordinates[]): number {
+    let totalDistance = 0;
+    for (let i = 0; i < locations.length - 1; i++) {
+        totalDistance += calculateDistance(locations[i], locations[i+1]);
+    }
+    return totalDistance;
+}
 

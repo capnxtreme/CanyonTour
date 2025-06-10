@@ -1,6 +1,5 @@
 import React from 'react';
 import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
-import { SuggestedWaypoint } from './types';
 
 interface MapProps {
   onLoad: (map: google.maps.Map) => void;

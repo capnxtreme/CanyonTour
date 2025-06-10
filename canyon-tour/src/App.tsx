@@ -1,12 +1,11 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import './App.css';
 import InteractiveMap from './InteractiveMap';
 import { Route, RoutePreferences, SuggestedWaypoint, RouteOption } from './types';
-import { geocodeLocation, getEnhancedRouteBoundingBox } from './services/googleMapsService';
+import { geocodeLocation } from './services/googleMapsService';
 import { findTwistyRoadWaypoints } from './services/osmService';
-import { optimizeForTwistyRouting, generateRouteOptions } from './utils/routingUtils';
-import { useDebounce } from './hooks/useDebounce';
+import { generateRouteOptions } from './utils/routingUtils';
 
 function App() {
   const [route, setRoute] = useState<Route>({
@@ -14,7 +13,7 @@ function App() {
     end: '',
     waypoints: []
   });
-  const debouncedRoute = useDebounce(route, 500);
+
   const [routeUrl, setRouteUrl] = useState<string>('');
   const [wazeUrl, setWazeUrl] = useState<string>('');
   const [preferences, setPreferences] = useState<RoutePreferences>({
@@ -77,7 +76,9 @@ function App() {
     }
   }, [route.start, route.end]);
 
-  const activeWaypoints = selectedRouteIndex !== null ? routeOptions[selectedRouteIndex]?.waypoints.filter(wp => wp.checked) : [];
+  const activeWaypoints = useMemo(() => {
+    return selectedRouteIndex !== null ? routeOptions[selectedRouteIndex]?.waypoints.filter(wp => wp.checked) : [];
+  }, [selectedRouteIndex, routeOptions]);
 
   useEffect(() => {
     const renderRoute = async () => {
@@ -224,15 +225,19 @@ function App() {
   const toggleSuggestedWaypoint = (id: string) => {
     if (selectedRouteIndex === null) return;
     
-    setRouteOptions(prev => {
-      const newOptions = [...prev];
-      const waypoints = newOptions[selectedRouteIndex].waypoints;
-      const wpIndex = waypoints.findIndex(wp => wp.id === id);
-      if (wpIndex > -1) {
-        waypoints[wpIndex].checked = !waypoints[wpIndex].checked;
-      }
-      return newOptions;
-    });
+    setRouteOptions(prev => 
+      prev.map((option, index) => {
+        if (index !== selectedRouteIndex) {
+          return option;
+        }
+        return {
+          ...option,
+          waypoints: option.waypoints.map(wp => 
+            wp.id === id ? { ...wp, checked: !wp.checked } : wp
+          ),
+        };
+      })
+    );
   };
   
   const handleGenerateRoute = () => {
@@ -303,8 +308,7 @@ function App() {
 
   const checkedSuggestionsCount = activeWaypoints.length;
 
-  // Create a ref for the map container div
-  const mapContainerRef = useRef<HTMLDivElement>(null);
+
 
   return (
     <div className="app-container">

@@ -39,4 +39,8 @@ export interface Coordinates {
   export interface RouteOption {
     name: string;
     waypoints: SuggestedWaypoint[];
+    start?: Coordinates;
+    end?: Coordinates;
+    totalDistance?: number;
+    totalTwistiness?: number;
   } 

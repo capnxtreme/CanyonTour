@@ -62,14 +62,14 @@ async function generateRoute(
         // --- QUALITY CONTROL: Stop if the best available waypoint isn't good enough ---
         const minimumScore = MINIMUM_WAYPOINT_SCORES[strategy] || 10.0;
         if (!isFirstWaypoint && waypointScore < minimumScore) {
-            if (process.env.NODE_ENV === 'development') {
+            if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
                 console.log(`${strategy}: Stopping waypoint selection - best candidate score (${waypointScore.toFixed(2)}) is below threshold (${minimumScore})`);
             }
             break;
         }
 
         if (nextWaypoint) {
-            if (process.env.NODE_ENV === 'development') {
+            if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
                 console.log(`${strategy}: Selected waypoint ${route.length + 1}: ${nextWaypoint.description || nextWaypoint.location} (score: ${waypointScore.toFixed(2)}, twistiness: ${nextWaypoint.twistiness?.toFixed(2)})`);
             }
             
@@ -91,14 +91,14 @@ async function generateRoute(
             }
             
             if (strategy !== 'Scenic Loop' && terminationDistance > 0 && calculateDistance(currentPosition, end) < terminationDistance) {
-                if (process.env.NODE_ENV === 'development') {
+                if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
                     console.log(`${strategy}: Stopping waypoint selection - within ${terminationDistance/1000}km of destination`);
                 }
                 break;
             }
         } else {
             // No more suitable waypoints found
-            if (process.env.NODE_ENV === 'development') {
+            if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
                 console.log(`No more waypoints found for ${strategy} strategy after ${route.length} waypoints`);
             }
             break; 
@@ -241,7 +241,7 @@ export async function generateRouteOptions(
         return bScore - aScore;
     });
 
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
         console.log(`Generated ${generatedRoutes.length} valid route options after fetching directions.`);
         generatedRoutes.forEach(route => {
             console.log(`  - ${route.name}: ${route.waypoints.length} waypoints, quality score: ${calculateRouteQuality(route).toFixed(2)}`);
@@ -278,7 +278,7 @@ function calculateRouteQuality(route: RouteOption): number {
     const baseScore = qualityScore + quantityBonus + totalTwistinessScore + valleyBonus;
     const finalScore = baseScore + continuityBonus + backtrackPenalty;
     
-    if (process.env.NODE_ENV === 'development') {
+    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
         console.log(`Quality Score for ${route.name}: Base=${baseScore.toFixed(1)}, Continuity=${continuityBonus.toFixed(1)}, Final=${finalScore.toFixed(1)}`);
     }
     

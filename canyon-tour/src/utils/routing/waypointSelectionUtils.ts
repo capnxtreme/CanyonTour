@@ -31,9 +31,7 @@ function selectNextWaypoint(
     // Use straight line distance as baseline - we'll apply the driving multiplier consistently
     const baseDistance = calculateDistance(currentPosition, end);
     
-    if (process.env.NODE_ENV === 'development') {
-        console.log(`Base distance calculation for ${strategy} - Straight line: ${baseDistance.toFixed(0)}m`);
-    }
+    // Removed noisy distance calculation logging
     
     // Filter out waypoints that are too far from the start, especially for the first waypoint.
     const firstWaypointRelaxation = 35000; // 35km search radius for the first hop
@@ -48,7 +46,8 @@ function selectNextWaypoint(
         nearbyWaypoints.push(...availableWaypoints);
     }
 
-    if (process.env.NODE_ENV === 'development') {
+    // Verbose candidate logging moved to verbose mode only
+    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
         const sortedForDebug = [...nearbyWaypoints]
             .map(wp => ({ ...wp, score: scoreWaypoint(wp, currentPosition, end, baseDistance, strategy) }))
             .sort((a, b) => b.score - a.score);
@@ -104,7 +103,7 @@ function selectBestDiverseWaypoint(
                 if (distance < 1500) { // 1.5km is too close
                     const originalScore = item.score;
                     item.score *= 0.1; // Heavy penalty
-                    if (process.env.NODE_ENV === 'development' && (item.waypoint.location?.toLowerCase().includes('lyons') || item.waypoint.location?.toLowerCase().includes('japatul'))) {
+                    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true' && (item.waypoint.location?.toLowerCase().includes('lyons') || item.waypoint.location?.toLowerCase().includes('japatul'))) {
                         console.log(`%c[Penalty Applied] Proximity penalty for ${item.waypoint.location}. Score reduced from ${originalScore.toFixed(2)} to ${item.score.toFixed(2)}`, 'color: #FF474C;');
                     }
                 }
@@ -121,7 +120,7 @@ function selectBestDiverseWaypoint(
                 if (distance < 1500) { // 1.5km is too close
                     const originalScore = item.score;
                     item.score *= 0.1; // Heavy penalty
-                    if (process.env.NODE_ENV === 'development' && (item.waypoint.location?.toLowerCase().includes('lyons') || item.waypoint.location?.toLowerCase().includes('japatul'))) {
+                    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true' && (item.waypoint.location?.toLowerCase().includes('lyons') || item.waypoint.location?.toLowerCase().includes('japatul'))) {
                         console.log(`%c[Penalty Applied] Proximity penalty for ${item.waypoint.location}. Score reduced from ${originalScore.toFixed(2)} to ${item.score.toFixed(2)}`, 'color: #FF474C;');
                     }
                 }
@@ -162,7 +161,7 @@ function selectBestDiverseWaypoint(
                 const penaltyFactor = Math.min(backwardDistance / 15000, 0.8); // Max 80% penalty, gentler curve
                 item.score *= (1 - penaltyFactor);
                 
-                if (process.env.NODE_ENV === 'development') {
+                if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
                     console.log(`Forward progress penalty for ${item.waypoint.location}: ${backwardDistance.toFixed(0)}m beyond tolerance, penalty: ${(penaltyFactor * 100).toFixed(1)}%`);
                 }
             }
@@ -178,7 +177,7 @@ function selectBestDiverseWaypoint(
                     if (waypointDistanceToEnd > currentDistanceToEnd + allowedBacktrack) {
                         item.score *= 0.3; // Reduced penalty from 0.1 to 0.3
                         
-                        if (process.env.NODE_ENV === 'development') {
+                        if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
                             console.log(`Major backtrack penalty for ${item.waypoint.location}: would undo significant progress`);
                         }
                     }
@@ -193,7 +192,7 @@ function selectBestDiverseWaypoint(
             // A "good road" is one that's at least reasonably twisty.
             const isGoodContinuation = (lastWaypoint.twistiness || 0) > 0.8;
             if (isGoodContinuation) {
-                if (process.env.NODE_ENV === 'development') {
+                if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
                     console.log(`Applying strong contiguous bonus for staying on ${item.waypoint.location}`);
                 }
                 item.score += 25.0; // Strong bonus to encourage staying on a good road
@@ -231,7 +230,7 @@ function selectBestDiverseWaypoint(
         // If filtering removes everyone, fall back but with warning
         const finalCandidates = topCandidates.length > 0 ? topCandidates : scoredWaypoints;
         
-        if (topCandidates.length === 0 && process.env.NODE_ENV === 'development') {
+        if (topCandidates.length === 0 && process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
             console.log(`Warning: Direction filtering removed all candidates for ${strategy}, using all waypoints`);
         }
 

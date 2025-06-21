@@ -179,10 +179,12 @@ export function processOsmData(
   console.log(`  - Generated ${waypoints.length} waypoints after processing.`);
 
   // LINK ROAD SEGMENTS INTO COMPLETE ROADS
-  console.log('  - Linking road segments into complete roads...');
+  if (process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
+    console.log('  - Linking road segments into complete roads...');
+  }
   const linkedRoads = linkRoadSegments(waypoints);
   
-  if (process.env.NODE_ENV === 'development') {
+  if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
     console.log(`%c[Road Linking] Found ${linkedRoads.length} linked roads:`, 'color: #00A36C;');
     linkedRoads.slice(0, 5).forEach(road => {
       console.log(`  - ${road.name}: ${road.segments.length} segments, ${(road.totalLength/1000).toFixed(1)}km, avg twistiness: ${road.averageTwistiness.toFixed(2)}`);
@@ -191,7 +193,9 @@ export function processOsmData(
 
   // CREATE STRATEGIC WAYPOINTS FROM LINKED ROADS
   const strategicWaypoints = createStrategicWaypointsFromLinkedRoads(linkedRoads, 15);
-  console.log(`  - Created ${strategicWaypoints.length} strategic waypoints from linked roads.`);
+  if (process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
+    console.log(`  - Created ${strategicWaypoints.length} strategic waypoints from linked roads.`);
+  }
 
   // MERGE STRATEGIC WAYPOINTS WITH ORIGINAL WAYPOINTS
   const allWaypoints = [...strategicWaypoints, ...waypoints];
@@ -199,7 +203,9 @@ export function processOsmData(
   // Remove duplicates (strategic waypoints might overlap with original ones)
   const uniqueWaypoints = removeDuplicateWaypoints(allWaypoints);
   
-  console.log(`  - Final waypoint count: ${uniqueWaypoints.length} (${strategicWaypoints.length} strategic + ${waypoints.length} original - duplicates)`);
+  if (process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
+    console.log(`  - Final waypoint count: ${uniqueWaypoints.length} (${strategicWaypoints.length} strategic + ${waypoints.length} original - duplicates)`);
+  }
   
   return uniqueWaypoints;
 }
@@ -226,8 +232,6 @@ function removeDuplicateWaypoints(waypoints: SuggestedWaypoint[]): SuggestedWayp
     
     if (!isDuplicate) {
       uniqueWaypoints.push(waypoint);
-    } else if (process.env.NODE_ENV === 'development') {
-      console.log(`  - Removed duplicate waypoint: ${waypoint.location}`);
     }
   });
   

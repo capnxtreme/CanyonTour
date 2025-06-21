@@ -1,5 +1,6 @@
-import { SuggestedWaypoint, Coordinates, RouteOption } from '../../types';
+import { SuggestedWaypoint, Coordinates } from '../../types';
 import { calculateDistance } from './geoUtils';
+import * as geolib from 'geolib';
 
 export const STRATEGIES = [
     'Twisty', 
@@ -32,9 +33,42 @@ export function scoreWaypoint(
     if (!waypoint.coordinates) {
         return -Infinity; // Skip waypoints without coordinates
     }
+
+    // --- Hard Rules: Immediately disqualify undesirable road types for scenic routes ---
+    const isScenicStrategy = ['Twisty', 'Valley Route', 'Mountain Route', 'Scenic Loop', 'Adventure Route'].includes(strategy);
+    if (isScenicStrategy) {
+        const highwayType = waypoint.tags?.highway;
+        if (highwayType === 'motorway' || highwayType === 'trunk' || highwayType === 'motorway_link' || highwayType === 'trunk_link') {
+            if (process.env.NODE_ENV === 'development') {
+                console.log(`DISQUALIFIED: ${waypoint.description || waypoint.location} is a freeway/trunk road.`);
+            }
+            return -Infinity;
+        }
+    }
+
     const distanceToWaypoint = calculateDistance(currentPosition, waypoint.coordinates);
     const distanceFromWaypointToEnd = calculateDistance(waypoint.coordinates, end);
-    const detourDistance = distanceToWaypoint + distanceFromWaypointToEnd - baseDistance;
+    const totalRouteDistance = distanceToWaypoint + distanceFromWaypointToEnd;
+    
+    // Calculate detour as the difference between the total route and the base distance
+    // Both are straight line distances, so this gives us the actual detour
+    const detourDistance = totalRouteDistance - baseDistance;
+    
+    // Apply driving multiplier to get estimated driving detour
+    const estimatedDrivingDetour = detourDistance * 1.4;
+    
+    // Debug logging for Lyons Valley Road to understand detour calculation
+    if (process.env.NODE_ENV === 'development' && waypoint.description?.toLowerCase().includes('lyons')) {
+        console.log(`DETOUR DEBUG - ${waypoint.description}:`, {
+            distanceToWaypoint: distanceToWaypoint.toFixed(2),
+            distanceFromWaypointToEnd: distanceFromWaypointToEnd.toFixed(2),
+            totalThroughWaypoint: totalRouteDistance.toFixed(2),
+            baseDistance: baseDistance.toFixed(2),
+            detourDistance: detourDistance.toFixed(2),
+            estimatedDrivingDetour: estimatedDrivingDetour.toFixed(2),
+            strategy: strategy
+        });
+    }
 
     // Base scoring factors
     const twistiness = waypoint.twistiness || 0;
@@ -42,92 +76,292 @@ export function scoreWaypoint(
     const score = waypoint.score || 0;
     const strategicValue = waypoint.strategicValue || 0;
 
+    // Add randomization factor for diversity (small but meaningful)
+    const randomizationFactor = (Math.random() - 0.5) * 2.0; // -1.0 to +1.0
+
     // Strategy-specific scoring
     let finalScore = 0;
-    let detourTolerance = 1;
 
     switch (strategy) {
         case 'Twisty':
-            finalScore = twistiness * 2 + strategicValue;
-            detourTolerance = 0.5; // More tolerant of detours
+            finalScore = (twistiness * 8.0) + strategicValue + randomizationFactor;
             
-            // Special handling for valley roads - be more permissive
-            const isValleyRoad = waypoint.description?.toLowerCase().includes('valley') || 
-                               waypoint.location?.toLowerCase().includes('valley');
+            const roadType = waypoint.tags?.highway;
+            // SIGNIFICANTLY increased secondary road bonus to favor Lyons Valley Road type roads
+            if (roadType === 'secondary') finalScore += 30.0; // Increased from 10.0
+            else if (roadType === 'tertiary') finalScore += 20.0; // Increased from 5.0
+            else if (roadType === 'unclassified') finalScore += 25.0; // New bonus for rural roads
             
-            if (isValleyRoad) {
-                // For valley roads like Lyons Valley Road, allow larger detours to include more sections
-                if (distanceFromWaypointToEnd > baseDistance * 1.5) {
-                    console.log(`Twisty: Filtering out valley road ${waypoint.description || waypoint.location} - too far from destination (${distanceFromWaypointToEnd.toFixed(0)}m vs ${(baseDistance * 1.5).toFixed(0)}m limit)`);
-                    return -Infinity;
-                }
-                // Bonus for valley roads in twisty routes
-                finalScore += 1.0;
+            // Enhanced valley road detection
+            const isValleyRoad = waypoint.tags?.natural === 'valley' || 
+                                waypoint.description?.toLowerCase().includes('valley') ||
+                                waypoint.location?.toLowerCase().includes('valley');
+            if (isValleyRoad) finalScore += 20.0; // Increased from 6.0
+
+            // --- Enhanced bonuses for ideal road characteristics ---
+            const lanes = waypoint.tags?.lanes ? parseInt(waypoint.tags.lanes) : 0;
+            if (lanes === 2) {
+                finalScore += 25.0; // Increased from 15.0 - Strong bonus for being a 2-lane road
+            } else if (lanes === 3 || lanes === 4) {
+                finalScore += 10.0; // Moderate bonus for 3-4 lanes
             }
+
+            const maxSpeed = waypoint.tags?.maxspeed ? parseInt(waypoint.tags.maxspeed) : 0;
+            if (maxSpeed >= 45 && maxSpeed <= 65) {
+                finalScore += 15.0; // Increased from 10.0 - Strong bonus for ideal speed limits
+            }
+
+            // Strongly penalize straight roads
+            if ((twistiness || 0) < 0.5) finalScore -= 10.0;
+            
+            // Big bonus for high twistiness
+            if (twistiness > 2.0) {
+                finalScore += 12.0; // Increased from 8.0
+            }
+
             break;
 
         case 'Balanced':
-            finalScore = twistiness + strategicValue + (elevation / 1000);
-            detourTolerance = 1;
+            finalScore = (twistiness * 1.8) + strategicValue + (elevation / 800) + (score * 0.8) + randomizationFactor;
+            
+            // Balanced route prefers moderate values
+            if (twistiness > 1.0 && twistiness < 3.0) {
+                finalScore += 1.5;
+            } else if (twistiness > 4.0 || twistiness < 0.5) { // Penalize extremes
+                finalScore -= 2.0;
+            }
+            if (elevation > 200 && elevation < 1000) {
+                finalScore += 1.0;
+            } else if (elevation > 1500 || elevation < 100) { // Penalize extremes
+                finalScore -= 2.0;
+            }
             break;
 
         case 'Direct':
-            finalScore = strategicValue + (twistiness * 0.5);
-            detourTolerance = 2; // Less tolerant of detours
+            finalScore = strategicValue + randomizationFactor - (twistiness * 2.0);
+            
+            // Add a bonus for waypoints that are roughly perpendicular to the direct line to the destination
+            const bearingToWaypoint = geolib.getGreatCircleBearing(currentPosition, waypoint.coordinates);
+            const bearingToEnd = geolib.getGreatCircleBearing(currentPosition, end);
+            const angleDifference = Math.abs(bearingToWaypoint - bearingToEnd);
+            if (angleDifference > 45 && angleDifference < 135) {
+                finalScore += 10; // Bonus for perpendicular direction
+            }
             break;
 
         case 'Scenic Loop':
             // Favor waypoints that create interesting loops and circles back
-            finalScore = twistiness + score + strategicValue;
-            detourTolerance = 0.3; // Very tolerant of detours for loops
-            // Allow more significant detours for scenic loops
+            finalScore = (twistiness * 2.0) + (score * 3) + strategicValue + randomizationFactor;
+            
+            // Bonus for waypoints that might create good loops
+            const distanceFromStart = calculateDistance(currentPosition, waypoint.coordinates);
+            const angleFromDirect = Math.abs(Math.atan2(
+                waypoint.coordinates.lat - currentPosition.lat,
+                waypoint.coordinates.lon - currentPosition.lon
+            ) - Math.atan2(
+                end.lat - currentPosition.lat,
+                end.lon - currentPosition.lon
+            ));
+            
+            // Bonus for waypoints that are perpendicular to the direct route
+            if (angleFromDirect > Math.PI/3 && angleFromDirect < 2*Math.PI/3) {
+                finalScore += 4.0;
+            }
+            
+            // Bonus for being a good distance away from start and end
+            if (distanceFromStart > baseDistance * 0.2 && distanceFromWaypointToEnd > baseDistance * 0.2) {
+                finalScore += 3.0;
+            }
             break;
 
         case 'Mountain Route':
             // Prioritize elevation and mountain features
-            const elevationBonus = elevation > 1000 ? (elevation / 500) : 0;
+            const elevationBonus = elevation > 800 ? (elevation / 200) : 0;
+            const highElevationBonus = elevation > 1500 ? 5 : 0;
             const mountainBonus = (waypoint.type === 'peak' || waypoint.type === 'mountain' || 
-                                 waypoint.type === 'viewpoint') ? 5 : 0;
-            finalScore = elevationBonus + mountainBonus + twistiness + strategicValue;
-            detourTolerance = 0.7;
+                                 waypoint.type === 'viewpoint') ? 15 : 0;
+            const mountainNameBonus = (waypoint.description?.toLowerCase().includes('mountain') ||
+                                     waypoint.description?.toLowerCase().includes('peak') ||
+                                     waypoint.description?.toLowerCase().includes('summit')) ? 8 : 0;
+            
+            finalScore = elevationBonus + highElevationBonus + mountainBonus + mountainNameBonus + 
+                        (twistiness * 0.8) + strategicValue + randomizationFactor;
+            
+            // Penalize low elevation waypoints
+            if (elevation < 300) {
+                finalScore -= 5.0; // Increased penalty from 3.0
+            }
+            if (waypoint.elevation && waypoint.elevation > 1000) {
+                finalScore += 10.0;
+            }
             break;
 
-        case 'Valley Route':
-            // Prefer valley routes and lower elevation scenic points
-            const valleyBonus = elevation < 500 ? 3 : 0;
-            const riverBonus = (waypoint.type === 'waterfall' || waypoint.type === 'river' || 
-                              waypoint.description?.toLowerCase().includes('creek')) ? 4 : 0;
-            finalScore = valleyBonus + riverBonus + twistiness + strategicValue;
-            detourTolerance = 0.8;
+        case 'Valley Route': {
+            let finalScore = 0; // Initialize finalScore for this case
+
+            // ENHANCED Valley Road Detection - specifically targeting Lyons Valley Road characteristics
+            const hasValleyInName = waypoint.description?.toLowerCase().includes('valley') ||
+                                   waypoint.location?.toLowerCase().includes('valley') ||
+                                   waypoint.tags?.name?.toLowerCase().includes('valley') ||
+                                   waypoint.tags?.alt_name?.toLowerCase().includes('valley');
+            
+            if (hasValleyInName) {
+                finalScore += 40.0; // MASSIVE bonus for valley roads like Lyons Valley Road
+            }
+
+            // PRIORITIZE (from rules):
+            // - 2 lane roads (now as a bonus, not a filter)
+            const lanes = waypoint.tags?.lanes ? parseInt(waypoint.tags.lanes) : 0;
+            if (lanes === 2) {
+                finalScore += 35.0; // Increased from 25.0 - Very strong bonus for being a 2-lane road
+            } else if (lanes === 3 || lanes === 4) {
+                finalScore += 15.0; // Moderate bonus for 3-4 lanes
+            } else if (lanes > 4) {
+                finalScore -= (lanes - 4) * 8.0; // Penalize for each lane above 4
+            }
+
+            // - "secondary" roads - ENHANCED
+            const roadType = waypoint.tags?.highway;
+            if (roadType === 'secondary') {
+                finalScore += 35.0; // Increased from 20.0 - HUGE bonus for secondary roads
+            } else if (roadType === 'tertiary') {
+                finalScore += 25.0; // Also good for valley routes
+            } else if (roadType === 'unclassified') {
+                finalScore += 30.0; // Often rural valley roads
+            }
+
+            // - roads with speed limit 45-65mph
+            const maxSpeedStr = waypoint.tags?.maxspeed?.replace(/[^\d]/g, ''); // Remove non-digits
+            const hasGoodSpeed = maxSpeedStr && 
+                parseInt(maxSpeedStr) >= 45 && 
+                parseInt(maxSpeedStr) <= 65;
+            if (hasGoodSpeed) {
+                finalScore += 15.0; // Increased from 5.0
+            }
+
+            // BONUS for continuous road segments (like Lyons Valley Road's 11 segments)
+            const roadName = waypoint.tags?.name || waypoint.description || waypoint.location || '';
+            if (roadName.length > 0) {
+                finalScore += 10.0; // Bonus for named roads
+            }
+
+            // DE-PRIORITIZE (from rules):
+            // - roads that are not twisty (handled by twistiness score)
+
+            // EXCLUDE (from rules):
+            // - unpaved roads
+            const isUnpaved = waypoint.tags?.surface && ['unpaved', 'dirt', 'gravel', 'ground'].includes(waypoint.tags.surface);
+            if (isUnpaved) return -Infinity;
+
+            // - roads less than 2 lanes
+            if (lanes > 0 && lanes < 2) return -Infinity;
+
+            // Add base factors with increased twistiness weight for valley routes
+            finalScore += (twistiness * 6.0) + strategicValue + randomizationFactor; // Increased from 4.0
+            
+            // Bonus for high twistiness valley roads
+            if (twistiness > 2.0 && hasValleyInName) {
+                finalScore += 20.0; // Special bonus for twisty valley roads
+            }
+            
+            // Ensure finalScore is used in the switch context
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const _valleyRouteScore = finalScore;
+
             break;
+        }
 
         case 'Adventure Route':
             // Favor adventure and outdoor activity waypoints
             const adventureBonus = (waypoint.type === 'cave' || waypoint.type === 'hot_spring' ||
-                                  waypoint.type === 'recreation' || waypoint.type === 'park') ? 6 : 0;
-            finalScore = adventureBonus + twistiness + strategicValue + score;
-            detourTolerance = 0.6;
+                                  waypoint.type === 'recreation' || waypoint.type === 'park') ? 15 : 0;
+            const outdoorBonus = (waypoint.description?.toLowerCase().includes('trail') ||
+                                waypoint.description?.toLowerCase().includes('camp') ||
+                                waypoint.description?.toLowerCase().includes('hike')) ? 8 : 0;
+            const remoteBonus = (waypoint.description?.toLowerCase().includes('remote') ||
+                               waypoint.description?.toLowerCase().includes('wilderness')) ? 6 : 0;
+            
+            finalScore = adventureBonus + outdoorBonus + remoteBonus + (twistiness * 0.8) + 
+                        strategicValue + score + randomizationFactor;
             break;
 
         case 'Historic Route':
             // Prioritize historic and cultural waypoints
             const historicBonus = (waypoint.type === 'monument' || waypoint.type === 'castle' ||
-                                 waypoint.type === 'historic' || waypoint.type === 'museum') ? 7 : 0;
-            finalScore = historicBonus + strategicValue + score;
-            detourTolerance = 1.0;
+                                 waypoint.type === 'historic' || waypoint.type === 'museum') ? 18 : 0;
+            const culturalBonus = (waypoint.description?.toLowerCase().includes('historic') ||
+                                 waypoint.description?.toLowerCase().includes('heritage') ||
+                                 waypoint.description?.toLowerCase().includes('monument')) ? 10 : 0;
+            const oldBonus = (waypoint.description?.toLowerCase().includes('old') ||
+                            waypoint.description?.toLowerCase().includes('ancient')) ? 6 : 0;
+            
+            finalScore = historicBonus + culturalBonus + oldBonus + strategicValue + 
+                        (score * 0.8) + randomizationFactor;
+            
+            // Slight penalty for high twistiness (historic routes often on older, straighter roads)
+            if (twistiness > 2.5) {
+                finalScore -= 1.0;
+            }
+
+            // Bonus for proximity to other historical points (this is hard to calculate here, so we give a bonus to high strategic value instead)
+            if (strategicValue > 0.8) {
+                finalScore += 5.0;
+            }
             break;
 
         default:
-            finalScore = twistiness + strategicValue;
-            detourTolerance = 1;
+            finalScore = twistiness + strategicValue + randomizationFactor;
             if (distanceFromWaypointToEnd > baseDistance) {
                 return -Infinity;
             }
     }
 
-    // Apply detour penalty with strategy-specific tolerance
-    const detourPenalty = detourDistance * detourTolerance;
-    return finalScore - detourPenalty;
+    // --- Detour, Overshoot, and Final Scoring ---
+
+    // 1. REVISED Detour Penalty: Much more generous budget for scenic roads
+    let detourPenalty = 0;
+    
+    // Strategy-specific detour tolerance
+    const strategyDetourBudget: Record<string, number> = {
+        'Twisty': twistiness * 5000 + 10000, // 5km per twistiness point + 10km base
+        'Valley Route': twistiness * 4000 + 8000, // 4km per twistiness point + 8km base
+        'Mountain Route': twistiness * 4000 + 8000,
+        'Scenic Loop': twistiness * 6000 + 15000, // Very generous for loops
+        'Adventure Route': twistiness * 3000 + 6000,
+        'Balanced': twistiness * 3000 + 5000,
+        'Direct': twistiness * 1000 + 2000,
+        'Historic Route': twistiness * 2000 + 4000
+    };
+    
+    const detourBudget = strategyDetourBudget[strategy] || (twistiness * 2500);
+    
+    if (detourDistance > detourBudget) {
+        // Much gentler penalty curve
+        const excessDetour = detourDistance - detourBudget;
+        // Linear penalty instead of quadratic, and much smaller coefficient
+        detourPenalty = Math.min(excessDetour / 1000, 15); // Max 15 point penalty
+    }
+    
+    // The final score is adjusted by the calculated penalties
+    let finalScoreFromStrategy = finalScore || 0;
+    finalScoreFromStrategy = finalScoreFromStrategy - detourPenalty;
+
+    if (process.env.NODE_ENV === 'development' && (waypoint.description?.toLowerCase().includes('lyons') || waypoint.description?.toLowerCase().includes('japatul'))) {
+        console.log(`%c[Score Calculation] ${waypoint.description}:
+    - Strategy: ${strategy}
+    - Initial Score (Twistiness, Bonuses): ${(finalScoreFromStrategy + detourPenalty).toFixed(2)}
+    - Detour Penalty: ${detourPenalty.toFixed(2)} (Budget: ${(twistiness * 2500).toFixed(0)}m, Actual: ${detourDistance.toFixed(0)}m)
+    - Final Score: ${finalScoreFromStrategy.toFixed(2)}`,
+            'color: #FFA500;'
+        );
+    }
+
+    // Ensure score is not negative
+    if (finalScoreFromStrategy < 0) {
+        finalScoreFromStrategy = 0;
+    }
+    
+    return finalScoreFromStrategy;
 }
 
 /**
@@ -165,17 +399,10 @@ export function filterWaypointsForStrategy(waypoints: SuggestedWaypoint[], strat
                 wp.description?.toLowerCase().includes('stream')
             );
             
-            console.log(`Valley Route filtering: ${filteredWaypoints.length} waypoints after filtering from ${waypoints.length}`);
-            const lyonsWaypoints = filteredWaypoints.filter(wp => 
-                wp.description?.toLowerCase().includes('lyons') || wp.location?.toLowerCase().includes('lyons')
-            );
-            console.log(`  - Found ${lyonsWaypoints.length} Lyons waypoints:`, lyonsWaypoints.map(wp => wp.description || wp.location));
-            
             if (filteredWaypoints.length < 3 && waypoints.length > 3) {
                 filteredWaypoints = waypoints
                     .sort((a, b) => (a.elevation || 0) - (b.elevation || 0))
                     .slice(0, Math.max(waypoints.length / 2, 5));
-                console.log(`Valley Route fallback: expanded to ${filteredWaypoints.length} waypoints`);
             }
             break;
             

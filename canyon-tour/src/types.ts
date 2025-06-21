@@ -17,6 +17,7 @@ export interface Coordinates {
     roadType?: string;
     elevation?: number;
     elevationChange?: number;
+    tags?: { [key: string]: any };
   }
   
   export interface Route {
@@ -41,6 +42,12 @@ export interface Coordinates {
     waypoints: SuggestedWaypoint[];
     start?: Coordinates;
     end?: Coordinates;
-    totalDistance?: number;
+    distance?: number;
     totalTwistiness?: number;
+    strategy?: string;
+    description?: string;
+    duration?: number;
+    directions?: google.maps.DirectionsResult;
+    continuityScore?: number;
+    routeAnalysis?: any; // Will contain the route analysis data
   } 

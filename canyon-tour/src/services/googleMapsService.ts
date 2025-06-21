@@ -42,6 +42,37 @@ export const geocodeLocation = async (location: string): Promise<{ lat: number; 
     }
   };
 
+export const getEnhancedRouteBoundingBoxFromCoords = async (startCoords: { lat: number, lon: number }, endCoords: { lat: number, lon: number }): Promise<string | null> => {
+  console.log('2. Calculating enhanced route bounding box from coordinates...');
+  try {
+      if (!startCoords || !endCoords) {
+          console.error("  - ❌ Invalid start or end coordinates provided.");
+          return null;
+      };
+      
+      const directDistance = calculateDistance(startCoords, endCoords);
+      console.log('  - Direct route distance:', directDistance.toFixed(2), 'km');
+      
+      const buffer = Math.min(Math.max(directDistance * 0.2, 5), 20);
+      console.log('  - Using buffer distance:', buffer.toFixed(2), 'km');
+      
+      const latBuffer = buffer / 111.32;
+      const lonBuffer = buffer / (111.32 * Math.cos(startCoords.lat * Math.PI / 180));
+      
+      const minLat = Math.min(startCoords.lat, endCoords.lat) - latBuffer;
+      const maxLat = Math.max(startCoords.lat, endCoords.lat) + latBuffer;
+      const minLon = Math.min(startCoords.lon, endCoords.lon) - lonBuffer;
+      const maxLon = Math.max(startCoords.lon, endCoords.lon) + lonBuffer;
+      
+      const bbox = `${minLat},${minLon},${maxLat},${maxLon}`;
+      console.log('  - ✅ Calculated bounding box from coords:', bbox);
+      return bbox;
+  } catch (error) {
+      console.log('  - ❌ Failed to get route bounding box from coords:', error);
+      return null;
+  }
+};
+
 export const getEnhancedRouteBoundingBox = async (start: string, end: string): Promise<string | null> => {
 console.log('2. Calculating enhanced route bounding box...');
 try {
@@ -77,4 +108,41 @@ try {
     return null;
 }
 };
+
+export const getDirections = async (
+    start: { lat: number, lon: number },
+    end: { lat: number, lon: number },
+    waypoints: { lat: number, lon: number }[]
+  ): Promise<google.maps.DirectionsResult | null> => {
+    console.log(`3. Fetching directions from Google with ${waypoints.length} waypoints...`);
+    
+    if (!window.google || !window.google.maps || !window.google.maps.DirectionsService) {
+      console.error("  - ❌ Google Maps script not loaded or DirectionsService not available.");
+      return null;
+    }
+  
+    const directionsService = new window.google.maps.DirectionsService();
+  
+    const request: google.maps.DirectionsRequest = {
+      origin: new window.google.maps.LatLng(start.lat, start.lon),
+      destination: new window.google.maps.LatLng(end.lat, end.lon),
+      waypoints: waypoints.map(wp => ({
+        location: new window.google.maps.LatLng(wp.lat, wp.lon),
+        stopover: true, // This is crucial to force the route through our waypoints
+      })),
+      optimizeWaypoints: false, // We have already optimized for scenery, not speed
+      travelMode: window.google.maps.TravelMode.DRIVING,
+    };
+  
+    try {
+      const result = await directionsService.route(request);
+      // The promise-based API call will throw an error on a non-OK status,
+      // so if we get here, the status is OK.
+      console.log('  - ✅ Successfully fetched directions.');
+      return result;
+    } catch (error) {
+      console.error('  - ❌ Error fetching directions:', error);
+      return null;
+    }
+  };
 

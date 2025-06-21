@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { QRCodeSVG } from 'qrcode.react';
 import './App.css';
 import InteractiveMap from './InteractiveMap';
-import { Route, RoutePreferences, SuggestedWaypoint, RouteOption } from './types';
+import { Route, RoutePreferences, RouteOption } from './types';
 import { geocodeLocation } from './services/googleMapsService';
 import { findTwistyRoadWaypoints } from './services/osmService';
 import { generateRouteOptions } from './utils/routingUtils';
@@ -36,8 +36,8 @@ function App() {
     });
   }, []);
 
-  const handleSearch = useCallback(async () => {
-    if (!route.start || !route.end) {
+  const handleSearch = async () => {
+    if (!route.start || !route.end || isLoadingSuggestions) {
       return;
     }
 
@@ -48,25 +48,29 @@ function App() {
     console.log(`Searching for twisty roads between: "${route.start}" and "${route.end}"`);
 
     try {
-      const twistyRoads = await findTwistyRoadWaypoints(route.start, route.end);
+      // First geocode the start and end locations
+      const startCoords = await geocodeLocation(route.start);
+      const endCoords = await geocodeLocation(route.end);
+
+      if (!startCoords || !endCoords) {
+        console.log('Failed to geocode start or end location. Aborting optimization.');
+        return;
+      }
+
+      const twistyRoads = await findTwistyRoadWaypoints(startCoords, endCoords);
       
       if (!twistyRoads || twistyRoads.length === 0) {
         console.log('No twisty road waypoints found. Aborting optimization.');
       } else {
-        const startCoords = await geocodeLocation(route.start);
-        const endCoords = await geocodeLocation(route.end);
-
-        if (startCoords && endCoords) {
-          const options = generateRouteOptions(twistyRoads, startCoords, endCoords);
-          const optionsWithChecked = options.map(opt => ({
-            ...opt,
-            waypoints: opt.waypoints.map(wp => ({ ...wp, checked: true }))
-          }));
-          console.log('--- Scenic Waypoint Discovery Finished ---');
-          setRouteOptions(optionsWithChecked);
-          if (optionsWithChecked.length > 0) {
-            setSelectedRouteIndex(0);
-          }
+        const options = await generateRouteOptions(twistyRoads, startCoords, endCoords);
+        const optionsWithChecked = options.map(opt => ({
+          ...opt,
+          waypoints: opt.waypoints.map(wp => ({ ...wp, checked: true }))
+        }));
+        console.log('--- Scenic Waypoint Discovery Finished ---');
+        setRouteOptions(optionsWithChecked);
+        if (optionsWithChecked.length > 0) {
+          setSelectedRouteIndex(0);
         }
       }
     } catch (error) {
@@ -74,10 +78,10 @@ function App() {
     } finally {
       setIsLoadingSuggestions(false);
     }
-  }, [route.start, route.end]);
+  };
 
-  const activeWaypoints = useMemo(() => {
-    return selectedRouteIndex !== null ? routeOptions[selectedRouteIndex]?.waypoints.filter(wp => wp.checked) : [];
+  const selectedRoute = useMemo(() => {
+    return selectedRouteIndex !== null ? routeOptions[selectedRouteIndex] : null;
   }, [selectedRouteIndex, routeOptions]);
 
   useEffect(() => {
@@ -86,118 +90,46 @@ function App() {
         return;
       }
 
+      // Clear any existing markers
       markersRef.current.forEach(marker => marker.setMap(null));
       markersRef.current = [];
 
-      if (!route.start || !route.end || activeWaypoints.length === 0) {
-        directionsRendererRef.current.setDirections(null);
-        return;
-      }
+      // If there's a selected route with directions, render it
+      if (selectedRoute && selectedRoute.directions) {
+        directionsRendererRef.current.setDirections(selectedRoute.directions);
 
-      const directionsService = new google.maps.DirectionsService();
-
-      const waypoints = activeWaypoints
-        .filter((wp): wp is SuggestedWaypoint & { coordinates: { lat: number; lon: number } } => 
-          wp.coordinates !== undefined && 
-          typeof wp.coordinates.lat === 'number' && 
-          typeof wp.coordinates.lon === 'number'
-        )
-        .map(wp => ({
-          location: new google.maps.LatLng(wp.coordinates.lat, wp.coordinates.lon),
-          stopover: true
-        }));
-
-      const request: google.maps.DirectionsRequest = {
-        origin: route.start,
-        destination: route.end,
-        waypoints,
-        optimizeWaypoints: false,
-        travelMode: google.maps.TravelMode.DRIVING,
-      };
-
-      try {
-        const result = await directionsService.route(request);
-        if (result.routes.length > 0) {
-          directionsRendererRef.current.setDirections(result);
-
-          const bounds = new google.maps.LatLngBounds();
-          result.routes[0].legs.forEach(leg => {
-            leg.steps.forEach(step => {
-              step.path.forEach(latlng => {
-                bounds.extend(latlng);
-              });
-            });
+        // Add markers for the waypoints of the selected route
+        const waypoints = selectedRoute.waypoints;
+        waypoints.forEach((wp, index) => {
+          if (!wp.coordinates) return;
+          const waypointMarker = new google.maps.Marker({
+            position: new google.maps.LatLng(wp.coordinates.lat, wp.coordinates.lon),
+            map: mapRef.current,
+            title: wp.location,
+            label: {
+              text: (index + 1).toString(),
+              color: '#FFFFFF'
+            },
+            icon: {
+              path: google.maps.SymbolPath.CIRCLE,
+              scale: 8,
+              fillColor: '#FF9800',
+              fillOpacity: 1,
+              strokeColor: '#FFFFFF',
+              strokeWeight: 2
+            }
           });
+          markersRef.current.push(waypointMarker);
+        });
 
-          if(mapRef.current) {
-              mapRef.current.fitBounds(bounds);
-
-              const startMarker = new google.maps.Marker({
-                position: result.routes[0].legs[0].start_location,
-                map: mapRef.current,
-                title: 'Start',
-                icon: {
-                  path: google.maps.SymbolPath.CIRCLE,
-                  scale: 8,
-                  fillColor: '#4CAF50',
-                  fillOpacity: 1,
-                  strokeColor: '#FFFFFF',
-                  strokeWeight: 2
-                }
-              });
-              markersRef.current.push(startMarker);
-
-              activeWaypoints.forEach((wp, index) => {
-                if (!wp.coordinates) return;
-                const waypointMarker = new google.maps.Marker({
-                  position: new google.maps.LatLng(wp.coordinates.lat, wp.coordinates.lon),
-                  map: mapRef.current,
-                  title: wp.location,
-                  label: {
-                    text: (index + 1).toString(),
-                    color: '#FFFFFF'
-                  },
-                  icon: {
-                    path: google.maps.SymbolPath.CIRCLE,
-                    scale: 8,
-                    fillColor: '#FF9800',
-                    fillOpacity: 1,
-                    strokeColor: '#FFFFFF',
-                    strokeWeight: 2
-                  }
-                });
-                markersRef.current.push(waypointMarker);
-              });
-
-              const endMarker = new google.maps.Marker({
-                position: result.routes[0].legs[result.routes[0].legs.length - 1].end_location,
-                map: mapRef.current,
-                title: 'End',
-                icon: {
-                  path: google.maps.SymbolPath.CIRCLE,
-                  scale: 8,
-                  fillColor: '#F44336',
-                  fillOpacity: 1,
-                  strokeColor: '#FFFFFF',
-                  strokeWeight: 2
-                }
-              });
-              markersRef.current.push(endMarker);
-          }
-        } else {
-          console.error('Directions request failed: No routes found');
-          directionsRendererRef.current.setDirections(null);
-        }
-      } catch (e) {
-        console.error('Error calculating route:', e);
-        if (directionsRendererRef.current) {
-            directionsRendererRef.current.setDirections(null);
-        }
+      } else {
+        // Otherwise, clear the directions from the map
+        directionsRendererRef.current.setDirections(null);
       }
     };
 
     renderRoute();
-  }, [activeWaypoints, route.start, route.end]);
+  }, [selectedRoute]); // This effect now ONLY depends on the selected route
 
   // --- Main App Logic & State ---
 
@@ -247,7 +179,8 @@ function App() {
     }
 
     const waypointsForUrl = [
-        ...activeWaypoints.map(wp => wp.coordinates ? {lat: wp.coordinates.lat, lon: wp.coordinates.lon} : wp.location),
+        ...(selectedRoute?.waypoints.filter(wp => wp.coordinates)
+            .map(wp => ({lat: wp.coordinates!.lat, lon: wp.coordinates!.lon})) || []),
         ...route.waypoints.filter(wp => wp.location).map(wp => wp.location)
     ];
 
@@ -281,34 +214,31 @@ function App() {
     return url;
   }
 
-  const generateWazeSegments = () => {
+  const wazeSegments = useMemo(() => {
     const allWaypoints = [
-        ...activeWaypoints.map(wp => wp.location),
-        ...route.waypoints.filter(wp => wp.location).map(wp => wp.location)
+      ...(selectedRoute?.waypoints.filter(wp => wp.location).map(wp => wp.location) || [])
     ];
     if (allWaypoints.length === 0) return [];
 
     const segments = [];
     let currentStart = route.start;
     allWaypoints.forEach((waypoint, index) => {
-        segments.push({
-            url: `https://waze.com/ul?q=${encodeURIComponent(waypoint)}&navigate=yes`,
-            description: `${currentStart.split(',')[0]} → ${waypoint.split(',')[0]}`,
-            segment: index + 1
-        });
-        currentStart = waypoint;
+      segments.push({
+        url: `https://waze.com/ul?q=${encodeURIComponent(waypoint)}&navigate=yes`,
+        description: `${currentStart.split(',')[0]} → ${waypoint.split(',')[0]}`,
+        segment: index + 1
+      });
+      currentStart = waypoint;
     });
     segments.push({
-        url: `https://waze.com/ul?q=${encodeURIComponent(route.end)}&navigate=yes`,
-        description: `${currentStart.split(',')[0]} → ${route.end.split(',')[0]}`,
-        segment: segments.length + 1
+      url: `https://waze.com/ul?q=${encodeURIComponent(route.end)}&navigate=yes`,
+      description: `${currentStart.split(',')[0]} → ${route.end.split(',')[0]}`,
+      segment: segments.length + 1
     });
     return segments;
-  };
+  }, [selectedRoute, route.start, route.end]);
 
-  const checkedSuggestionsCount = activeWaypoints.length;
-
-
+  const checkedSuggestionsCount = selectedRoute?.waypoints.filter(wp => wp.checked).length || 0;
 
   return (
     <div className="app-container">
@@ -333,7 +263,6 @@ function App() {
                     type="text"
                     value={route.start}
                     onChange={(e) => setRoute(prev => ({ ...prev, start: e.target.value }))}
-                    onBlur={handleSearch}
                     placeholder="Enter starting location"
                   />
                 </div>
@@ -345,10 +274,17 @@ function App() {
                     type="text"
                     value={route.end}
                     onChange={(e) => setRoute(prev => ({ ...prev, end: e.target.value }))}
-                    onBlur={handleSearch}
                     placeholder="Enter destination"
                   />
                 </div>
+                
+                <button
+                  onClick={handleSearch}
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                  disabled={!route.start || !route.end || isLoadingSuggestions}
+                >
+                  {isLoadingSuggestions ? 'Finding Routes...' : 'Find Scenic Routes'}
+                </button>
               </div>
 
               {(routeOptions.length > 0 || isLoadingSuggestions) && (
@@ -451,7 +387,7 @@ function App() {
               <button
                 onClick={handleGenerateRoute}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium mt-4"
-                disabled={activeWaypoints.length === 0 && route.waypoints.length === 0}
+                disabled={checkedSuggestionsCount === 0 && route.waypoints.length === 0}
               >
                 Generate Scenic Route ({checkedSuggestionsCount + route.waypoints.filter(wp => wp.location).length} waypoints)
               </button>
@@ -476,25 +412,19 @@ function App() {
                     <a href={wazeUrl} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:text-purple-800 break-all text-sm">{wazeUrl}</a>
                   </div>
                   
-                  {(() => {
-                    const segments = generateWazeSegments();
-                    if (segments.length > 1) {
-                      return (
-                        <div className="bg-purple-50 p-3 rounded-md">
-                          <div className="text-sm font-medium text-purple-800 mb-2">Multi-Segment Route</div>
-                          <div className="space-y-2">
-                            {segments.map((segment, index) => (
-                              <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
-                                <span className="text-xs font-medium text-gray-700">Segment {segment.segment}: {segment.description}</span>
-                                <button onClick={() => window.open(segment.url, '_blank')} className="px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors ml-2">Open</button>
-                              </div>
-                            ))}
+                  {wazeSegments.length > 1 && (
+                    <div className="bg-purple-50 p-3 rounded-md">
+                      <div className="text-sm font-medium text-purple-800 mb-2">Multi-Segment Route</div>
+                      <div className="space-y-2">
+                        {wazeSegments.map((segment, index) => (
+                          <div key={index} className="flex items-center justify-between bg-white p-2 rounded border">
+                            <span className="text-xs font-medium text-gray-700">Segment {segment.segment}: {segment.description}</span>
+                            <button onClick={() => window.open(segment.url, '_blank')} className="px-2 py-1 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors ml-2">Open</button>
                           </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

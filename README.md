@@ -107,3 +107,56 @@ Then run:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details. 
+
+## Roadmap: UX Improvements, Bug Fixes, and Feature Suggestions (2024)
+
+### 1. User-Friendly Error Handling (High Priority)
+- Implement a toast/alert system to display errors for:
+  - Geocoding failures (invalid or unrecognized locations)
+  - OSM/Google Maps API failures (network, quota, or missing API key)
+  - No scenic waypoints found
+- Ensure all errors are visible to the user, not just logged to the console.
+
+### 2. Loading Indicators (High Priority)
+- Add loading spinners for:
+  - Map loading (initial and on error)
+  - Geocoding in progress
+  - Route generation/analysis
+- Provide clear feedback for all async operations.
+
+### 3. Input and Route Validation (High Priority)
+- Validate start/end locations before route search (check existence via geocoding).
+- Show user-friendly errors if locations are invalid or not found.
+- Add route feasibility checks (e.g., minimum distance, valid waypoints).
+
+### 4. Prevent Double Submissions (Medium Priority)
+- Disable "Find Scenic Routes" and "Generate Scenic Route" buttons while requests are in progress.
+- Prevent race conditions and duplicate API calls.
+
+### 5. Route Preview and Analytics (Medium Priority)
+- Display estimated drive time, distance, and elevation profile before final route generation.
+- Show route summary and analytics (e.g., twistiness score, scenic value).
+
+### 6. Interactive Map Editing (High Priority)
+- Allow users to drag waypoints or route segments directly on the map.
+- Provide visual feedback and undo/redo for route modifications.
+
+### 7. Saved Routes and Sharing (Medium Priority)
+- Allow users to save, edit, and categorize routes.
+- Add sharing options: email, social media, export to GPX/KML.
+
+### 8. POI and Advanced Preferences (Medium Priority)
+- Integrate points of interest (POI) along the route (restaurants, gas stations, rest stops).
+- Allow advanced preferences: elevation, time of day, weather, seasonal recommendations.
+
+### 9. Offline Support and User Accounts (Low Priority)
+- Cache routes for offline access.
+- Add user authentication and cloud sync for saved routes.
+
+### 10. Accessibility and Mobile UX (Ongoing)
+- Ensure all controls are accessible (ARIA labels, keyboard navigation).
+- Optimize for mobile devices and screen readers.
+
+---
+
+**Implementation will proceed in priority order, starting with error handling, loading indicators, and input validation. Each feature will include user stories, technical requirements, and test cases.** 

@@ -7,6 +7,8 @@ import { geocodeLocation } from './services/googleMapsService';
 import { findTwistyRoadWaypoints } from './services/osmService';
 import { generateRouteOptions } from './utils/routingUtils';
 import { Logger } from './utils/logger';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 function App() {
   const [route, setRoute] = useState<Route>({
@@ -54,6 +56,7 @@ function App() {
 
       if (!startCoords || !endCoords) {
         Logger.error('Failed to geocode locations');
+        toast.error('Could not find one or both locations. Please check your input.');
         return;
       }
 
@@ -61,6 +64,7 @@ function App() {
       
       if (!twistyRoads || twistyRoads.length === 0) {
         Logger.warn('No scenic waypoints found in area');
+        toast.warn('No scenic roads found between your locations. Try a different area or adjust your start/end.');
       } else {
         const options = await generateRouteOptions(twistyRoads, startCoords, endCoords);
         const optionsWithChecked = options.map(opt => ({
@@ -71,10 +75,12 @@ function App() {
         setRouteOptions(optionsWithChecked);
         if (optionsWithChecked.length > 0) {
           setSelectedRouteIndex(0);
+          toast.success('Scenic route options found!');
         }
       }
     } catch (error) {
       Logger.error('Route discovery failed', error);
+      toast.error('Failed to generate scenic routes. Please try again later.');
     } finally {
       Logger.timeEnd('Route Discovery');
       setIsLoadingSuggestions(false);
@@ -175,7 +181,7 @@ function App() {
   
   const handleGenerateRoute = () => {
     if (!route.start || !route.end) {
-      alert('Please enter both start and end locations');
+      toast.error('Please enter both start and end locations');
       return;
     }
 
@@ -243,6 +249,7 @@ function App() {
 
   return (
     <div className="app-container">
+      <ToastContainer position="top-center" autoClose={4000} hideProgressBar={false} newestOnTop closeOnClick pauseOnFocusLoss draggable pauseOnHover />
       <div className="controls-container">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-4xl font-bold text-center text-gray-800 mb-8">

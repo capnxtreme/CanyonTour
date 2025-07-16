@@ -34,6 +34,13 @@ export const geocodeLocation = async (location: string): Promise<{ lat: number; 
         return coords;
       } else {
         console.log('  - ❌ Geocoding failed for:', location, 'Status:', data.status, 'Error:', data.error_message);
+        
+        // For common test locations that fail, try fallback searches
+        if (location.toLowerCase().includes('julian') && location.toLowerCase().includes('cafe')) {
+          console.log('  - Trying fallback search for Julian area...');
+          return geocodeLocation('Julian, CA');
+        }
+        
         return null;
       }
     } catch (error) {

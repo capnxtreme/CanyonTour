@@ -31,7 +31,7 @@ export class TwistinessCalculator {
 
     for (let i = 1; i < coords.length - 1; i++) {
       const angle = Math.abs(this.calculateAngle(coords[i - 1], coords[i], coords[i + 1]));
-      if (angle > 8) { // Increase threshold slightly to focus on more significant turns
+      if (angle > 3) { // Lowered from 8 to 3 degrees to detect gentle but continuous curves
         angles.push(angle);
         totalAngle += angle;
       }
@@ -55,7 +55,7 @@ export class TwistinessCalculator {
 
     // Base scores
     const angleScore = Math.min(avgAngle / 45.0, 1.0); // 0-1 based on curvature sharpness
-    const densityScore = Math.min(turnsPerKm / 3.0, 1.0); // 0-1 based on turn frequency (>=3 turns/km saturates)
+    const densityScore = Math.min(turnsPerKm / 2.0, 1.0); // 0-1 based on turn frequency (>=2 turns/km saturates, more generous)
 
     // Length factor – penalise only extremely short segments, reward longer scenic stretches
     let lengthFactor = 1.0;

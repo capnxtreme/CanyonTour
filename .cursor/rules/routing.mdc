@@ -1,0 +1,32 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+[routeGenerationUtils.ts](mdc:canyon-tour/src/utils/routing/routeGenerationUtils.ts)
+[routingUtils.ts](mdc:canyon-tour/src/utils/routingUtils.ts)
+[strategyUtils.ts](mdc:canyon-tour/src/utils/routing/strategyUtils.ts)
+[geoUtils.ts](mdc:canyon-tour/src/utils/routing/geoUtils.ts)
+[waypointSelectionUtils.ts](mdc:canyon-tour/src/utils/routing/waypointSelectionUtils.ts)
+[ADVANCED_WAYPOINT_SYSTEM.md](mdc:ADVANCED_WAYPOINT_SYSTEM.md)
+[algorithm_improvements.md](mdc:algorithm_improvements.md)
+[SCENIC_ROUTING.md](mdc:SCENIC_ROUTING.md)
+
+Prioritize:
+- 2 lane roads
+- "secondary" roads
+- roads with speed limit 45-65mph
+- contiguous routing
+
+De-prioritize:
+- roads that are not twisty
+
+
+Exclude altogether:
+- unpaved roads
+- roads less than 2 lanes
+- any waypoint that causes retracing our steps (out-and-back). loops are allowed but not retracing steps.
+
+Filtering mechanism:
+- use OSM meta data about the street characteristics to drive our logic
+- do NOT use the names of streets as part of the logic

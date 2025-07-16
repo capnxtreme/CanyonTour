@@ -77,6 +77,12 @@ export function processOsmData(
       if (element.type === 'way' && element.nodes) {
         const result = twistinessCalculator.calculateWayTwistiness(element.nodes, nodeMap);
         twistiness = result.twistiness;
+        
+        // Secondary roads get a minimum baseline twistiness since they're our priority
+        // OSM geometry might not capture all the curves, but secondary roads are usually scenic
+        if (element.tags?.highway === 'secondary' && twistiness < 0.8) {
+          twistiness = Math.max(twistiness, 0.8); // Ensure minimum baseline for secondary roads
+        }
       }
 
       // Add a small bonus for a good surface type
@@ -86,12 +92,34 @@ export function processOsmData(
         }
       }
 
+      // Special bonus for 2-lane secondary roads - these are exactly what we're looking for
+      if (element.tags?.highway === 'secondary' && element.tags?.lanes === '2') {
+        twistiness += 0.8; // Significant bonus for 2-lane secondary roads
+      } else if (element.tags?.highway === 'secondary') {
+        // Even secondary roads without explicit lane count deserve a bonus - assume they're likely 2-lane
+        twistiness += 0.5; // Moderate bonus for secondary roads without explicit lane info
+      }
+
+      // Bonus for ideal speed limits (45-65mph are perfect for scenic driving)
+      if (element.tags?.maxspeed) {
+        const speedMatch = element.tags.maxspeed.match(/(\d+)/);
+        if (speedMatch) {
+          const speed = parseInt(speedMatch[1]);
+          if (speed >= 45 && speed <= 65) {
+            twistiness += 0.3; // Bonus for ideal speed range
+          }
+        }
+      } else if (element.tags?.highway === 'secondary') {
+        // Secondary roads without explicit speed limits are likely in our target range (45-55mph)
+        twistiness += 0.2; // Moderate bonus for secondary roads without speed info
+      }
+
       // Base score for road type, as a fallback or addition
       if (element.tags?.highway) {
         if (element.tags.highway === 'tertiary') twistiness += 0.5;
         else if (element.tags.highway === 'unclassified') twistiness += 0.2;
         else if (element.tags.highway === 'residential') twistiness += 0.1;
-        else if (element.tags.highway === 'secondary') twistiness += 0.7; // Increased from 0.4
+        else if (element.tags.highway === 'secondary') twistiness += 1.2; // Significant increase for secondary roads - they're our prime targets
       }
 
       // Apply penalty score from suitability check
@@ -116,14 +144,18 @@ export function processOsmData(
       const progressScore = directRouteDist / totalDist;
 
       // Adjust twistiness based on progress - more lenient for scenic routes
-      const progressMultiplier = 0.7 + (0.3 * progressScore);
+      // Secondary roads get much less penalty since they're our primary targets
+      const isSecondaryRoad = element.tags?.highway === 'secondary';
+      const progressMultiplier = isSecondaryRoad ? 
+        0.9 + (0.1 * progressScore) : // Minimal penalty for secondary roads
+        0.7 + (0.3 * progressScore);  // Standard penalty for others
       const originalTwistiness = twistiness;
       twistiness *= progressMultiplier;
 
       // Filter out points with very low twistiness score
       if (twistiness < 0.05) { // Reduced from 0.1 to include more roads
-        if (element.tags?.name && (element.tags.name.toLowerCase().includes('valley') || element.tags.name.toLowerCase().includes('lyons'))) {
-          // console.log(`  - FILTERED OUT: ${name} - Twistiness: ${twistiness.toFixed(4)} (orig: ${originalTwistiness.toFixed(4)}), Highway: ${element.tags?.highway}, Progress: ${progressScore.toFixed(4)}, Multiplier: ${progressMultiplier.toFixed(4)}`);
+        if (process.env.REACT_APP_VERBOSE_LOGGING === 'true' && element.tags?.name && element.tags.name.toLowerCase().includes('lyons')) {
+          console.log(`  - FILTERED OUT: ${name} - Twistiness: ${twistiness.toFixed(4)} (orig: ${originalTwistiness.toFixed(4)}), Highway: ${element.tags?.highway}, Progress: ${progressScore.toFixed(4)}, Multiplier: ${progressMultiplier.toFixed(4)}`);
         }
         return null;
       }
@@ -152,12 +184,8 @@ export function processOsmData(
         strategicValue: 0 // Initialize strategic value
       };
 
-      // Debug logging to understand what tags roads actually have
-      if (element.tags?.name && (
-        element.tags.name.toLowerCase().includes('lyons') ||
-        element.tags.name.toLowerCase().includes('japatul') ||
-        element.tags.name.toLowerCase().includes('tavern')
-      )) {
+      // Debug logging for secondary roads to understand scoring (only in verbose mode)
+      if (process.env.REACT_APP_VERBOSE_LOGGING === 'true' && element.tags?.highway === 'secondary') {
         // Calculate distance for this segment for debugging
         let segmentDistance = 0;
         if (element.type === 'way' && element.nodes) {
@@ -166,7 +194,7 @@ export function processOsmData(
             segmentDistance += calculateDistance(coords[i], coords[i + 1]);
           }
         }
-        console.log(`%c[Waypoint Creation] ${name}: Final Twistiness: ${twistiness.toFixed(2)}, Original: ${originalTwistiness.toFixed(2)}, Highway: ${element.tags?.highway}, Nodes: ${element.nodes?.length}, Distance: ${(segmentDistance / 1000).toFixed(2)}km`, 'color: #00A36C;');
+        console.log(`%c[Secondary Road] ${name}: Final Score: ${twistiness.toFixed(3)}, Original: ${originalTwistiness.toFixed(3)}, Progress: ${progressScore.toFixed(3)}, Multiplier: ${progressMultiplier.toFixed(3)}, Lanes: ${element.tags?.lanes || 'none'}, Speed: ${element.tags?.maxspeed || 'none'}, Surface: ${element.tags?.surface || 'none'}, Distance: ${(segmentDistance / 1000).toFixed(2)}km, Filtered: ${twistiness < 0.05 ? 'YES' : 'NO'}`, 'color: #0066CC;');
       }
 
       return waypoint;

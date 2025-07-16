@@ -23,6 +23,7 @@ cd canyon-tour
 ### Environment Setup
 - Requires Google Maps API key in `.env` file as `REACT_APP_GOOGLE_MAPS_API_KEY`
 - No backend required - runs entirely in browser
+- **Optional**: Set `REACT_APP_VERBOSE_LOGGING=true` in `.env.local` to enable detailed debug logging
 
 ## Architecture Overview
 

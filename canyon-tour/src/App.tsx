@@ -6,6 +6,7 @@ import { Route, RoutePreferences, RouteOption } from './types';
 import { geocodeLocation } from './services/googleMapsService';
 import { findTwistyRoadWaypoints } from './services/osmService';
 import { generateRouteOptions } from './utils/routingUtils';
+import { Logger } from './utils/logger';
 
 function App() {
   const [route, setRoute] = useState<Route>({
@@ -44,38 +45,38 @@ function App() {
     setIsLoadingSuggestions(true);
     setRouteOptions([]);
     setSelectedRouteIndex(null);
-    console.log('--- Initiating Scenic Waypoint Discovery ---');
-    console.log(`Searching for twisty roads between: "${route.start}" and "${route.end}"`);
+    Logger.info(`Finding scenic routes: "${route.start}" → "${route.end}"`);
+    Logger.time('Route Discovery');
 
     try {
-      // First geocode the start and end locations
       const startCoords = await geocodeLocation(route.start);
       const endCoords = await geocodeLocation(route.end);
 
       if (!startCoords || !endCoords) {
-        console.log('Failed to geocode start or end location. Aborting optimization.');
+        Logger.error('Failed to geocode locations');
         return;
       }
 
       const twistyRoads = await findTwistyRoadWaypoints(startCoords, endCoords);
       
       if (!twistyRoads || twistyRoads.length === 0) {
-        console.log('No twisty road waypoints found. Aborting optimization.');
+        Logger.warn('No scenic waypoints found in area');
       } else {
         const options = await generateRouteOptions(twistyRoads, startCoords, endCoords);
         const optionsWithChecked = options.map(opt => ({
           ...opt,
           waypoints: opt.waypoints.map(wp => ({ ...wp, checked: true }))
         }));
-        console.log('--- Scenic Waypoint Discovery Finished ---');
+        Logger.success(`Generated ${optionsWithChecked.length} route options`);
         setRouteOptions(optionsWithChecked);
         if (optionsWithChecked.length > 0) {
           setSelectedRouteIndex(0);
         }
       }
     } catch (error) {
-      console.log('❌ Top-level strategic waypoint discovery failed:', error);
+      Logger.error('Route discovery failed', error);
     } finally {
+      Logger.timeEnd('Route Discovery');
       setIsLoadingSuggestions(false);
     }
   };

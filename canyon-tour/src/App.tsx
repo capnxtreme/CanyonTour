@@ -19,8 +19,7 @@ function App() {
   const [wazeUrl, setWazeUrl] = useState<string>('');
   const [preferences, setPreferences] = useState<RoutePreferences>({
     avoidHighways: true,
-    avoidTolls: true,
-    favorScenicRoads: true
+    avoidTolls: true
   });
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
@@ -62,7 +61,10 @@ function App() {
       if (!twistyRoads || twistyRoads.length === 0) {
         Logger.warn('No scenic waypoints found in area');
       } else {
-        const options = await generateRouteOptions(twistyRoads, startCoords, endCoords);
+        const options = await generateRouteOptions(twistyRoads, startCoords, endCoords, {
+          avoidHighways: preferences.avoidHighways,
+          avoidTolls: preferences.avoidTolls
+        });
         const optionsWithChecked = options.map(opt => ({
           ...opt,
           waypoints: opt.waypoints.map(wp => ({ ...wp, checked: true }))
@@ -180,7 +182,7 @@ function App() {
     }
 
     const waypointsForUrl = [
-        ...(selectedRoute?.waypoints.filter(wp => wp.coordinates)
+        ...(selectedRoute?.waypoints.filter(wp => wp.checked && wp.coordinates)
             .map(wp => ({lat: wp.coordinates!.lat, lon: wp.coordinates!.lon})) || []),
         ...route.waypoints.filter(wp => wp.location).map(wp => wp.location)
     ];
@@ -217,7 +219,7 @@ function App() {
 
   const wazeSegments = useMemo(() => {
     const allWaypoints = [
-      ...(selectedRoute?.waypoints.filter(wp => wp.location).map(wp => wp.location) || [])
+      ...(selectedRoute?.waypoints.filter(wp => wp.checked && wp.location).map(wp => wp.location) || [])
     ];
     if (allWaypoints.length === 0) return [];
 
@@ -388,7 +390,7 @@ function App() {
               <button
                 onClick={handleGenerateRoute}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium mt-4"
-                disabled={checkedSuggestionsCount === 0 && route.waypoints.length === 0}
+                disabled={!route.start || !route.end}
               >
                 Generate Scenic Route ({checkedSuggestionsCount + route.waypoints.filter(wp => wp.location).length} waypoints)
               </button>

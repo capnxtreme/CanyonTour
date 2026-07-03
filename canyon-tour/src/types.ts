@@ -34,7 +34,6 @@ export interface Coordinates {
   export interface RoutePreferences {
     avoidHighways: boolean;
     avoidTolls: boolean;
-    favorScenicRoads: boolean;
   }
   
   export interface RouteOption {

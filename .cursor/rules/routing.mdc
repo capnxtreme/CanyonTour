@@ -3,13 +3,12 @@ description:
 globs: 
 alwaysApply: true
 ---
-[routeGenerationUtils.ts](mdc:canyon-tour/src/utils/routing/routeGenerationUtils.ts)
+[roadGraph.ts](mdc:canyon-tour/src/utils/routing/roadGraph.ts)
+[graphRouter.ts](mdc:canyon-tour/src/utils/routing/graphRouter.ts)
+[graphRouteGenerator.ts](mdc:canyon-tour/src/utils/routing/graphRouteGenerator.ts)
 [routingUtils.ts](mdc:canyon-tour/src/utils/routingUtils.ts)
-[strategyUtils.ts](mdc:canyon-tour/src/utils/routing/strategyUtils.ts)
 [geoUtils.ts](mdc:canyon-tour/src/utils/routing/geoUtils.ts)
-[waypointSelectionUtils.ts](mdc:canyon-tour/src/utils/routing/waypointSelectionUtils.ts)
-[ADVANCED_WAYPOINT_SYSTEM.md](mdc:ADVANCED_WAYPOINT_SYSTEM.md)
-[algorithm_improvements.md](mdc:algorithm_improvements.md)
+[roadSuitability.ts](mdc:canyon-tour/src/services/osm/roadSuitability.ts)
 [SCENIC_ROUTING.md](mdc:SCENIC_ROUTING.md)
 
 Prioritize:
@@ -30,3 +29,15 @@ Exclude altogether:
 Filtering mechanism:
 - use OSM meta data about the street characteristics to drive our logic
 - do NOT use the names of streets as part of the logic
+
+Implementation (graph-based routing):
+- `roadGraph.ts` builds a topology graph from raw Overpass data: ways are
+  split into edges at shared junction nodes; hard exclusions (unpaved,
+  <2 lanes, tracks, private access) never enter the graph.
+- `graphRouter.ts` runs Dijkstra with profile-specific edge costs: desirable
+  edges (twisty, secondary, 2-lane, 45-65mph) cost less than their length,
+  undesirable edges cost more. Dijkstra never revisits a node, so retracing
+  steps is impossible by construction.
+- `graphRouteGenerator.ts` emits evenly spaced pin waypoints along the chosen
+  path so Google Maps follows the selected roads, then fetches real
+  directions per route option.

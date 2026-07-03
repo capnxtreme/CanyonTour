@@ -1,30 +1,27 @@
-import { SuggestedWaypoint, Coordinates } from '../../types';
+import { Coordinates } from '../../types';
 import { osmClient } from './osmClient';
-import { processOsmData } from './waypointProcessor';
 
-export const findTwistyRoadWaypoints = async (
+export interface OsmRoadData {
+  elements: any[];
+}
+
+/**
+ * Fetches raw OSM road data (ways + node geometry) for the corridor between
+ * two coordinates. The routing layer turns this into a topology road graph.
+ */
+export const fetchOsmRoadData = async (
   startCoords: Coordinates,
   endCoords: Coordinates
-): Promise<SuggestedWaypoint[]> => {
+): Promise<OsmRoadData | null> => {
   try {
-    console.log('--- Finding Twisty Road Waypoints (Advanced) ---');
-    
-    // Fetch OSM data using the client
     const osmData = await osmClient.fetchRoadData(startCoords, endCoords);
-    
     if (!osmData || !osmData.elements || osmData.elements.length === 0) {
       console.log('  - No OSM data found');
-      return [];
+      return null;
     }
-    
-    // Process the OSM data into waypoints
-    const waypoints = processOsmData(osmData, startCoords, endCoords);
-    
-    console.log(`  - ✅ Generated ${waypoints.length} waypoints from OSM data`);
-    return waypoints;
-    
+    return osmData;
   } catch (error) {
-    console.error('Error finding twisty road waypoints:', error);
-    return [];
+    console.error('Error fetching OSM road data:', error);
+    return null;
   }
-}; 
+};

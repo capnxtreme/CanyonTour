@@ -4,8 +4,8 @@ import './App.css';
 import InteractiveMap from './InteractiveMap';
 import { Route, RoutePreferences, RouteOption } from './types';
 import { geocodeLocation } from './services/googleMapsService';
-import { findTwistyRoadWaypoints } from './services/osmService';
-import { generateRouteOptions } from './utils/routingUtils';
+import { fetchOsmRoadData } from './services/osm';
+import { generateScenicRouteOptions } from './utils/routingUtils';
 import { Logger } from './utils/logger';
 
 function App() {
@@ -56,22 +56,18 @@ function App() {
         return;
       }
 
-      const twistyRoads = await findTwistyRoadWaypoints(startCoords, endCoords);
-      
-      if (!twistyRoads || twistyRoads.length === 0) {
-        Logger.warn('No scenic waypoints found in area');
+      const roadData = await fetchOsmRoadData(startCoords, endCoords);
+
+      if (!roadData) {
+        Logger.warn('No road data found in area');
       } else {
-        const options = await generateRouteOptions(twistyRoads, startCoords, endCoords, {
+        const options = await generateScenicRouteOptions(roadData, startCoords, endCoords, {
           avoidHighways: preferences.avoidHighways,
           avoidTolls: preferences.avoidTolls
         });
-        const optionsWithChecked = options.map(opt => ({
-          ...opt,
-          waypoints: opt.waypoints.map(wp => ({ ...wp, checked: true }))
-        }));
-        Logger.success(`Generated ${optionsWithChecked.length} route options`);
-        setRouteOptions(optionsWithChecked);
-        if (optionsWithChecked.length > 0) {
+        Logger.success(`Generated ${options.length} route options`);
+        setRouteOptions(options);
+        if (options.length > 0) {
           setSelectedRouteIndex(0);
         }
       }

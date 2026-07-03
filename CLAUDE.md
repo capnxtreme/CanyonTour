@@ -35,30 +35,44 @@ cd canyon-tour
 
 ### Key Architectural Components
 
-#### 1. Routing System (`src/utils/routing/`)
-The app's main feature is its sophisticated routing algorithm that finds scenic roads:
+#### 1. Graph-Based Routing System (`src/utils/routing/`)
+The app's main feature is a topology-based routing engine over OSM data:
 
-- **`routeGenerationUtils.ts`** - Main route generation orchestrator
-- **`strategyUtils.ts`** - Routing strategies (Twisty, Valley Route, Mountain Route, etc.)
-- **`waypointSelectionUtils.ts`** - Smart waypoint selection algorithms
+- **`roadGraph.ts`** - Builds a road graph from raw Overpass data. Ways are
+  split into edges at shared junction nodes (topology, not street names).
+  Hard exclusions (unpaved, <2 lanes, tracks, private access) never enter
+  the graph. Each edge carries geometry, length, twistiness, and OSM tags.
+- **`graphRouter.ts`** - Dijkstra shortest-cost path with per-profile edge
+  costs: desirable edges (twisty, secondary, 2-lane, 45-65 mph) cost less
+  than their physical length; undesirable ones cost more. Because Dijkstra
+  never revisits a node, retracing steps is impossible by construction.
+- **`graphRouteGenerator.ts`** - Orchestrator: builds the graph, runs the
+  route profiles (plus an edge-penalized alternative), emits evenly spaced
+  pin waypoints along each chosen path so Google Maps follows the selected
+  roads, and fetches real directions per option.
 - **`geoUtils.ts`** - Geographic calculations and utilities
+- **`routeAnalysis.ts`** - Validates Google-returned geometry for
+  out-and-back patterns (Google can still deviate between pins)
 
 #### 2. OSM Integration (`src/services/osm/`)
-Custom OpenStreetMap data processing for finding scenic roads:
+Custom OpenStreetMap data fetching:
 
-- **`osmClient.ts`** - OSM API interactions
-- **`twistinessCalculator.ts`** - Calculates road curvature/twistiness
-- **`roadSuitability.ts`** - Filters roads based on suitability criteria
-- **`waypointProcessor.ts`** - Processes OSM data into waypoints
+- **`osmClient.ts`** - Overpass API client (paved drivable road classes,
+  selected by OSM metadata only — no street-name filters)
+- **`twistinessCalculator.ts`** - Calculates road curvature/twistiness from
+  node geometry
+- **`roadSuitability.ts`** - Hard exclusions and soft penalties from OSM tags
+- **`index.ts`** - `fetchOsmRoadData` entry point returning raw OSM data
 
-#### 3. Route Strategy System
-The app uses multiple routing strategies to generate diverse route options:
+#### 3. Route Profiles (`graphRouter.ts`)
+Route diversity comes from cost profiles, not waypoint heuristics:
 
-- **Twisty**: Prioritizes maximum road curvature
-- **Valley Route**: Focuses on valley roads and geographic features
-- **Mountain Route**: Emphasizes elevation changes and mountain roads
-- **Scenic Loop**: Creates circular scenic routes
-- **Adventure Route**: Uses underutilized waypoints for exploration
+- **Twisty Explorer**: strong cost discounts for curvy 2-lane secondary
+  roads; accepts long detours
+- **Balanced Scenic**: moderate scenic preference with a smaller detour budget
+- **Most Direct**: shortest allowed path (still avoids unpaved/narrow roads)
+- **Twisty Explorer (Alternative)**: re-route with the primary scenic route's
+  edges penalized, kept only if it is meaningfully different (<70% overlap)
 
 #### 4. Road Filtering Logic (from `.cursor/rules/routing.mdc`)
 **Prioritize:**
@@ -79,11 +93,13 @@ The app uses multiple routing strategies to generate diverse route options:
 
 1. User enters start/end locations
 2. App geocodes locations using Google Maps
-3. OSM service finds potential waypoints in the area
-4. Routing algorithms generate multiple route options using different strategies
-5. Google Maps provides actual directions for each route
-6. User selects preferred route and can customize waypoints
-7. QR code generated for easy mobile sharing
+3. `fetchOsmRoadData` pulls raw road ways + node geometry for the corridor
+4. `buildRoadGraph` turns the OSM data into a topology graph
+5. `generateScenicRouteOptions` runs each cost profile over the graph and
+   emits pin waypoints along the winning paths
+6. Google Maps provides actual directions for each route option
+7. User selects preferred route and can toggle waypoints
+8. QR code generated for easy mobile sharing
 
 ### Key Types (`src/types.ts`)
 
@@ -111,9 +127,17 @@ interface RouteOption {
 
 ## Testing
 
-- Tests are located in `src/utils/routingUtils.test.ts`
-- Run tests with `npm test`
+- Run tests with `npm test` (CI mode: `CI=true npm test -- --watchAll=false`)
+- Routing engine tests: `src/utils/routing/roadGraph.test.ts` and
+  `src/utils/routing/graphRouteGenerator.test.ts`
+- Offline OSM fixture: `src/services/osm/__fixtures__/lyons_valley.json`
+  (real Overpass response for the Lyons Valley Road corridor)
+- Synthetic two-road network helper: `src/testUtils/syntheticOsm.ts`
+- Google Directions is mocked via `src/testUtils/mockDirections.ts`, which
+  builds a geometry-faithful `DirectionsResult`
+- Geocoding tests: `src/services/__tests__/googleMapsService.test.ts`
 - Main App component test in `src/App.test.tsx`
+- All routing is deterministic: same inputs always produce the same routes
 
 ## Code Conventions
 
@@ -126,22 +150,19 @@ interface RouteOption {
 ## Important Implementation Notes
 
 ### Route Generation Quality Controls
-- Minimum waypoint score threshold (12.0) to ensure quality routes
-- Maximum 10 waypoints per route to avoid overwhelming Google Maps
-- Routes automatically terminate when approaching destination (distance-based)
-- Alternative routes generated only for high-scoring waypoint candidates
+- Maximum 10 pin waypoints per route (Google Maps limit headroom); one pin
+  per ~6 km of path keeps Google glued to the selected roads
+- Pins are never placed within 1.5 km of start/end (Google handles approach)
+- Start/end must snap to the road graph within 30 km or generation aborts
+- Route options that overlap >95% with an existing option are deduplicated
 
-### Geographic Strategy Selection
-The app automatically determines viable routing strategies based on available waypoints:
-- Analyzes waypoint distribution and characteristics
-- Filters waypoints by strategy-specific criteria
-- Generates multiple route options with geographical diversity
+### Determinism
+- No randomness anywhere in routing: identical inputs give identical routes,
+  which makes tuning, debugging, and regression testing possible
 
-### Performance Optimizations
-- Concurrent route generation using Promise.all
-- Cached directions results
-- Efficient waypoint filtering before route generation
-- Limited to 8 best routes to avoid UI overwhelming
+### Name-Free Logic Rule
+- Routing decisions use only OSM metadata (highway class, lanes, maxspeed,
+  surface, access, geometry). Street names appear only in UI labels.
 
 ## External Dependencies
 
@@ -151,17 +172,15 @@ The app automatically determines viable routing strategies based on available wa
 - **Geolib**: Geographic calculations and utilities
 
 ### UI Libraries
-- **@headlessui/react**: Accessible UI components
-- **@heroicons/react**: Icon library
 - **QRCode.react**: QR code generation
 
 ## Development Tips
 
 1. **Debugging Routes**: Enable development mode logging to see detailed route generation process
-2. **Testing Waypoints**: Use console logs to understand waypoint scoring and selection
+2. **Tuning**: Adjust profile multipliers in `ROUTE_PROFILES` (`graphRouter.ts`); scoring is deterministic so before/after comparisons are meaningful
 3. **OSM Data**: Road characteristics come from OSM tags - check `roadSuitability.ts` for filtering logic
 4. **Google Maps Integration**: Directions API results include full route geometry and metadata
-5. **Route Quality**: Routes are scored based on average twistiness, waypoint count, and strategic bonuses
+5. **Offline testing**: Use the Lyons Valley fixture and `syntheticOsm.ts` to test routing without network access
 
 ## Documentation Files
 

@@ -7,8 +7,11 @@ export interface RoadSuitability {
 /**
  * Determines if a road is suitable for scenic driving by checking for exclusion criteria
  * and applying penalties for undesirable characteristics.
+ *
+ * Decisions are based purely on OSM metadata (surface, lanes, width, access,
+ * smoothness) — never on street names, per the routing rules.
  */
-export function getRoadSuitability(tags: any, roadName: string): RoadSuitability {
+export function getRoadSuitability(tags: any): RoadSuitability {
   const reasons: string[] = [];
   let penaltyScore = 0;
   let exclude = false;
@@ -59,12 +62,6 @@ export function getRoadSuitability(tags: any, roadName: string): RoadSuitability
   }
 
   // --- DE-PRIORITIZATION (PENALTIES) for roads that are not excluded ---
-
-  // Penalize roads with "Creek" in the name due to high likelihood of being narrow/unsuitable
-  if (roadName.toLowerCase().includes('creek')) {
-    reasons.push('High penalty: "Creek" in name');
-    penaltyScore += 5.0; // Very aggressive penalty
-  }
 
   // Check for physical width restrictions (as a penalty if not an exclusion)
   if (tags['maxwidth:physical']) {

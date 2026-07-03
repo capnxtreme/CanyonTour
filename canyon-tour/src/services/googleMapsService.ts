@@ -2,14 +2,15 @@ import { calculateDistance } from '../utils/routingUtils';
 import { getGoogleMapsApiKey } from '../utils/env';
 
 export const geocodeLocation = async (location: string): Promise<{ lat: number; lon: number } | null> => {
+    const apiKey = getGoogleMapsApiKey();
+    if (!apiKey) {
+      // Keyless mode: fall back to OSM Nominatim so route discovery still works.
+      console.log('1. Geocoding location with Nominatim (no Google API key set):', location);
+      return geocodeWithNominatim(location);
+    }
+
     console.log('1. Geocoding location with Google API:', location);
     try {
-      const apiKey = getGoogleMapsApiKey();
-      if (!apiKey) {
-        console.error('❌ FATAL: Google Maps API key not found. Please set VITE_GOOGLE_MAPS_API_KEY.');
-        return null;
-      }
-
       const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`;
 
       const response = await fetch(url);
@@ -38,6 +39,30 @@ export const geocodeLocation = async (location: string): Promise<{ lat: number; 
       return null;
     }
   };
+
+const geocodeWithNominatim = async (location: string): Promise<{ lat: number; lon: number } | null> => {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location)}`;
+    const response = await fetch(url, {
+      headers: { 'Accept': 'application/json' }
+    });
+    if (!response.ok) {
+      console.error('  - ❌ Nominatim request failed:', response.status, response.statusText);
+      return null;
+    }
+    const results = await response.json();
+    if (Array.isArray(results) && results.length > 0) {
+      const coords = { lat: parseFloat(results[0].lat), lon: parseFloat(results[0].lon) };
+      console.log('  - ✅ Successfully geocoded via Nominatim:', location, '→', coords);
+      return coords;
+    }
+    console.log('  - ❌ Nominatim found no results for:', location);
+    return null;
+  } catch (error) {
+    console.error('  - ❌ Nominatim geocoding error:', error);
+    return null;
+  }
+};
 
 export const getEnhancedRouteBoundingBoxFromCoords = async (startCoords: { lat: number, lon: number }, endCoords: { lat: number, lon: number }): Promise<string | null> => {
   console.log('2. Calculating enhanced route bounding box from coordinates...');

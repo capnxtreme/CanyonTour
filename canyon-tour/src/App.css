@@ -62,6 +62,23 @@
   }
 }
 
+/* Stack controls above the map on small screens */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .controls-container {
+    padding: 1rem;
+  }
+
+  .map-container {
+    height: 50vh;
+    min-height: 320px;
+  }
+}
+
 /* Route Option Card Styling */
 .route-option-card {
   background-color: white;

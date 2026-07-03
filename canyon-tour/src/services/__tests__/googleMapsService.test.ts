@@ -64,13 +64,33 @@ describe('googleMapsService', () => {
       expect(result).toBeNull();
     });
 
-    it('should handle missing API key', async () => {
+    it('should fall back to Nominatim when no API key is set', async () => {
       vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '');
 
-      const result = await geocodeLocation('jamul casino');
-      
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ lat: '32.7171', lon: '-116.876' }]
+      });
+
+      const result = await geocodeLocation('Jamul, CA');
+
+      expect(result).toEqual({ lat: 32.7171, lon: -116.876 });
+      const requestedUrl = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+      expect(requestedUrl).toContain('nominatim.openstreetmap.org');
+      expect(requestedUrl).not.toContain('key=');
+    });
+
+    it('should return null when Nominatim finds nothing (no API key)', async () => {
+      vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '');
+
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        ok: true,
+        json: async () => []
+      });
+
+      const result = await geocodeLocation('nowhere at all xyz');
+
       expect(result).toBeNull();
-      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 });

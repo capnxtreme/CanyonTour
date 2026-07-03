@@ -1,6 +1,6 @@
 import { Coordinates, RouteOption, SuggestedWaypoint } from '../../types';
 import { buildRoadGraph, findNearestNode, RoadGraph } from './roadGraph';
-import { findBestPath, pathOverlapFraction, GraphPath, ROUTE_PROFILES, RouteProfile } from './graphRouter';
+import { findBestPath, pathOverlapFraction, parseMaxSpeedMph, GraphPath, ROUTE_PROFILES, RouteProfile } from './graphRouter';
 import { calculateDistance, getStrategicRoutingDescription } from './geoUtils';
 import { getDirections, DirectionsOptions } from '../../services/googleMapsService';
 import { analyzeRouteForOutAndBack, calculateRouteContinuity } from './routeAnalysis';
@@ -84,30 +84,33 @@ export async function generateScenicRouteOptions(
     const waypoints = pathToWaypoints(path, profile);
     const waypointCoords = waypoints.map(wp => wp.coordinates!);
     const directions = await getDirections(start, end, waypointCoords, directionsOptions);
-    if (!directions) {
-      console.warn(`Could not fetch directions for ${profile.name}.`);
-      continue;
-    }
 
-    const routeAnalysis = analyzeRouteForOutAndBack(directions);
-    const continuityScore = calculateRouteContinuity(directions);
-    const totalDistance = directions.routes[0].legs.reduce((sum, leg) => sum + (leg.distance?.value || 0), 0);
-    const totalDuration = directions.routes[0].legs.reduce((sum, leg) => sum + (leg.duration?.value || 0), 0);
-
-    options.push({
+    const option: RouteOption = {
       name: `${profile.name}${nameSuffix ?? ''}`,
       strategy: profile.name,
       description:
         `${profile.description} ${(path.totalLengthMeters / 1000).toFixed(0)} km of selected roads, ` +
         `average twistiness ${path.averageTwistiness.toFixed(1)}.`,
       waypoints,
-      distance: totalDistance / 1000,
-      duration: totalDuration / 60,
-      directions,
-      continuityScore,
-      routeAnalysis,
       totalTwistiness: path.averageTwistiness,
-    });
+    };
+
+    if (directions) {
+      option.directions = directions;
+      option.routeAnalysis = analyzeRouteForOutAndBack(directions);
+      option.continuityScore = calculateRouteContinuity(directions);
+      option.distance = directions.routes[0].legs.reduce((sum, leg) => sum + (leg.distance?.value || 0), 0) / 1000;
+      option.duration = directions.routes[0].legs.reduce((sum, leg) => sum + (leg.duration?.value || 0), 0) / 60;
+    } else {
+      // Keyless / offline mode: Google Directions is unavailable, but the
+      // graph path itself gives solid estimates and the share URL + QR code
+      // (the app's real output) don't need the Directions API at all.
+      console.warn(`Could not fetch directions for ${profile.name}; using graph path estimates.`);
+      option.distance = path.totalLengthMeters / 1000;
+      option.duration = estimatePathDurationMinutes(path);
+    }
+
+    options.push(option);
   }
 
   // Rank scenic quality first; keep "Most Direct" available as a baseline.
@@ -119,6 +122,28 @@ function rankRoute(option: RouteOption): number {
   const twistiness = option.totalTwistiness || 0;
   const continuity = option.continuityScore || 0.5;
   return twistiness * 3 + continuity * 10;
+}
+
+/** Typical driving speeds (km/h) by OSM road class, used when maxspeed is untagged. */
+const DEFAULT_SPEED_KMH: Record<string, number> = {
+  primary: 90,
+  secondary: 75,
+  tertiary: 65,
+  unclassified: 55,
+  residential: 40,
+};
+
+/** Estimates driving time along a graph path from edge speed limits / road class. */
+export function estimatePathDurationMinutes(path: GraphPath): number {
+  let minutes = 0;
+  for (const edge of path.edges) {
+    const taggedMph = parseMaxSpeedMph(edge.tags.maxspeed);
+    const speedKmh = taggedMph !== null
+      ? taggedMph * 1.60934
+      : DEFAULT_SPEED_KMH[edge.highway] ?? 55;
+    minutes += (edge.lengthMeters / 1000 / speedKmh) * 60;
+  }
+  return minutes;
 }
 
 /**

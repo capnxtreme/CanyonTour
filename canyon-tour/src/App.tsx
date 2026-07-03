@@ -6,11 +6,18 @@ import RouteOptionsPanel from './components/RouteOptionsPanel';
 import CustomWaypoints from './components/CustomWaypoints';
 import PreferencesPanel from './components/PreferencesPanel';
 import SharePanel, { WazeSegment } from './components/SharePanel';
+import SavedRoutesPanel from './components/SavedRoutesPanel';
 import { Route, RoutePreferences, RouteOption } from './types';
 import { geocodeLocation } from './services/googleMapsService';
 import { fetchOsmRoadData } from './services/osm';
 import { generateScenicRouteOptions } from './utils/routingUtils';
 import { Logger } from './utils/logger';
+import { SavedRoute, getSavedRoutes, saveRoute, deleteSavedRoute } from './utils/savedRoutes';
+
+interface StatusMessage {
+  type: 'error' | 'info' | 'success';
+  text: string;
+}
 
 function App() {
   const [route, setRoute] = useState<Route>({
@@ -28,6 +35,8 @@ function App() {
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
+  const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>(() => getSavedRoutes());
   const mapRef = useRef<google.maps.Map | null>(null);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
@@ -48,35 +57,42 @@ function App() {
     setIsLoadingSuggestions(true);
     setRouteOptions([]);
     setSelectedRouteIndex(null);
+    setStatusMessage(null);
     Logger.info(`Finding scenic routes: "${route.start}" → "${route.end}"`);
     Logger.time('Route Discovery');
 
     try {
       const startCoords = await geocodeLocation(route.start);
+      if (!startCoords) {
+        setStatusMessage({ type: 'error', text: `Couldn't find "${route.start}". Try a more specific address or add a city/state.` });
+        return;
+      }
       const endCoords = await geocodeLocation(route.end);
-
-      if (!startCoords || !endCoords) {
-        Logger.error('Failed to geocode locations');
+      if (!endCoords) {
+        setStatusMessage({ type: 'error', text: `Couldn't find "${route.end}". Try a more specific address or add a city/state.` });
         return;
       }
 
       const roadData = await fetchOsmRoadData(startCoords, endCoords);
 
       if (!roadData) {
-        Logger.warn('No road data found in area');
+        setStatusMessage({ type: 'error', text: 'Could not load road data for this area. The OpenStreetMap service may be busy — try again in a minute.' });
       } else {
         const options = await generateScenicRouteOptions(roadData, startCoords, endCoords, {
           avoidHighways: preferences.avoidHighways,
           avoidTolls: preferences.avoidTolls
         });
         Logger.success(`Generated ${options.length} route options`);
-        setRouteOptions(options);
-        if (options.length > 0) {
+        if (options.length === 0) {
+          setStatusMessage({ type: 'error', text: 'No suitable scenic roads found between these locations. Try locations that are closer together or in a less urban area.' });
+        } else {
+          setRouteOptions(options);
           setSelectedRouteIndex(0);
         }
       }
     } catch (error) {
       Logger.error('Route discovery failed', error);
+      setStatusMessage({ type: 'error', text: 'Something went wrong during route discovery. Check the browser console for details.' });
     } finally {
       Logger.timeEnd('Route Discovery');
       setIsLoadingSuggestions(false);
@@ -169,7 +185,6 @@ function App() {
 
   const handleGenerateRoute = () => {
     if (!route.start || !route.end) {
-      alert('Please enter both start and end locations');
       return;
     }
 
@@ -233,6 +248,33 @@ function App() {
     return segments;
   }, [selectedRoute, route.start, route.end]);
 
+  const handleSaveRoute = () => {
+    if (!routeUrl) return;
+    const waypointLocations = [
+      ...(selectedRoute?.waypoints.filter(wp => wp.checked).map(wp => wp.location) || []),
+      ...route.waypoints.filter(wp => wp.location).map(wp => wp.location),
+    ];
+    const name = selectedRoute
+      ? `${selectedRoute.name}: ${route.start.split(',')[0]} → ${route.end.split(',')[0]}`
+      : `${route.start.split(',')[0]} → ${route.end.split(',')[0]}`;
+    saveRoute({ name, start: route.start, end: route.end, waypointLocations, routeUrl, wazeUrl });
+    setSavedRoutes(getSavedRoutes());
+    setStatusMessage({ type: 'success', text: `Saved "${name}".` });
+  };
+
+  const handleLoadSavedRoute = (saved: SavedRoute) => {
+    setRoute({ start: saved.start, end: saved.end, waypoints: [] });
+    setRouteOptions([]);
+    setSelectedRouteIndex(null);
+    setRouteUrl(saved.routeUrl);
+    setWazeUrl(saved.wazeUrl);
+    setStatusMessage({ type: 'info', text: `Loaded "${saved.name}". Scan the QR code or press "Find Scenic Routes" to regenerate options.` });
+  };
+
+  const handleDeleteSavedRoute = (id: string) => {
+    setSavedRoutes(deleteSavedRoute(id));
+  };
+
   const checkedSuggestionsCount = selectedRoute?.waypoints.filter(wp => wp.checked).length || 0;
 
   return (
@@ -250,6 +292,21 @@ function App() {
             <h2 className="text-2xl font-semibold mb-4">Plan Your Scenic Route</h2>
 
             <div className="space-y-4">
+              {statusMessage && (
+                <div
+                  role="alert"
+                  className={`p-3 rounded-md border text-sm ${
+                    statusMessage.type === 'error'
+                      ? 'bg-red-50 border-red-300 text-red-800'
+                      : statusMessage.type === 'success'
+                        ? 'bg-green-50 border-green-300 text-green-800'
+                        : 'bg-blue-50 border-blue-300 text-blue-800'
+                  }`}
+                >
+                  {statusMessage.text}
+                </div>
+              )}
+
               <RouteForm
                 start={route.start}
                 end={route.end}
@@ -286,7 +343,13 @@ function App() {
             </div>
           </div>
 
-          <SharePanel routeUrl={routeUrl} wazeUrl={wazeUrl} wazeSegments={wazeSegments} />
+          <SharePanel routeUrl={routeUrl} wazeUrl={wazeUrl} wazeSegments={wazeSegments} onSave={handleSaveRoute} />
+
+          <SavedRoutesPanel
+            savedRoutes={savedRoutes}
+            onLoad={handleLoadSavedRoute}
+            onDelete={handleDeleteSavedRoute}
+          />
         </div>
       </div>
       <div className="map-container">

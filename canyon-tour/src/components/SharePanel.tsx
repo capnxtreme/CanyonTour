@@ -11,14 +11,23 @@ interface SharePanelProps {
   routeUrl: string;
   wazeUrl: string;
   wazeSegments: WazeSegment[];
+  onSave: () => void;
 }
 
-const SharePanel: React.FC<SharePanelProps> = ({ routeUrl, wazeUrl, wazeSegments }) => {
+const SharePanel: React.FC<SharePanelProps> = ({ routeUrl, wazeUrl, wazeSegments, onSave }) => {
   if (!routeUrl) return null;
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
-      <h2 className="text-2xl font-semibold mb-4">Your Twisty Canyon Route</h2>
+    <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-semibold">Your Twisty Canyon Route</h2>
+        <button
+          onClick={onSave}
+          className="px-3 py-1 bg-amber-500 text-white text-sm rounded-md hover:bg-amber-600 transition-colors"
+        >
+          💾 Save Route
+        </button>
+      </div>
 
       <div className="mb-4">
         <h3 className="text-lg font-medium text-gray-800">Google Maps Route</h3>

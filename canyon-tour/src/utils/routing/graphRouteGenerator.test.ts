@@ -72,6 +72,21 @@ describe('generateScenicRouteOptions', () => {
     expect(summarize(second)).toEqual(summarize(first));
   });
 
+  test('still produces route options with estimates when Directions is unavailable (keyless mode)', async () => {
+    getDirectionsMock.mockResolvedValue(null);
+
+    const options = await generateScenicRouteOptions(buildSyntheticNetwork(), start, end);
+
+    expect(options.length).toBeGreaterThanOrEqual(2);
+    options.forEach(option => {
+      expect(option.directions).toBeUndefined();
+      // Estimates come from the graph path itself.
+      expect(option.distance).toBeGreaterThan(5);
+      expect(option.duration).toBeGreaterThan(0);
+      expect(option.waypoints.length).toBeGreaterThan(0);
+    });
+  });
+
   test('returns empty list when the area has no suitable roads', async () => {
     const options = await generateScenicRouteOptions({ elements: [] }, start, end);
     expect(options).toEqual([]);

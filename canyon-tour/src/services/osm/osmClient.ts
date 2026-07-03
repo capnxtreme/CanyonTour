@@ -43,11 +43,16 @@ out;`;
 
     while (retryCount < this.maxRetries) {
       try {
+        // Overpass expects the query in a form-encoded `data` parameter;
+        // posting the raw query body is rejected with 406 by newer versions.
+        // The User-Agent identifies the app per Overpass usage policy (it is
+        // a forbidden header in browsers and silently ignored there).
         response = await fetch(`https://overpass-api.de/api/interpreter`, {
           method: 'POST',
-          body: query,
+          body: `data=${encodeURIComponent(query)}`,
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'CanyonTour/1.0 (scenic route planner)'
           }
         });
 

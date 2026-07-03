@@ -181,6 +181,7 @@ interface RouteOption {
 3. **OSM Data**: Road characteristics come from OSM tags - check `roadSuitability.ts` for filtering logic
 4. **Google Maps Integration**: Directions API results include full route geometry and metadata
 5. **Offline testing**: Use the Lyons Valley fixture and `syntheticOsm.ts` to test routing without network access
+6. **Live engine demo (no Google key needed)**: `npx tsx scripts/demoGraphRoute.ts out.svg` fetches real Overpass data for the Jamul→Descanso corridor, prints the roads each profile chooses, and renders an SVG route map
 
 ## Documentation Files
 

@@ -46,10 +46,11 @@ export const getEnhancedRouteBoundingBoxFromCoords = async (startCoords: { lat: 
           return null;
       };
       
-      const directDistance = calculateDistance(startCoords, endCoords);
-      console.log('  - Direct route distance:', directDistance.toFixed(2), 'km');
+      // calculateDistance returns meters; the buffer math below works in km.
+      const directDistanceKm = calculateDistance(startCoords, endCoords) / 1000;
+      console.log('  - Direct route distance:', directDistanceKm.toFixed(2), 'km');
       
-      const buffer = Math.min(Math.max(directDistance * 0.2, 5), 20);
+      const buffer = Math.min(Math.max(directDistanceKm * 0.2, 5), 20); // 20% of distance, min 5km, max 20km
       console.log('  - Using buffer distance:', buffer.toFixed(2), 'km');
       
       const latBuffer = buffer / 111.32;
@@ -67,42 +68,6 @@ export const getEnhancedRouteBoundingBoxFromCoords = async (startCoords: { lat: 
       console.log('  - ❌ Failed to get route bounding box from coords:', error);
       return null;
   }
-};
-
-export const getEnhancedRouteBoundingBox = async (start: string, end: string): Promise<string | null> => {
-console.log('2. Calculating enhanced route bounding box...');
-try {
-    const startCoords = await geocodeLocation(start);
-    const endCoords = await geocodeLocation(end);
-    if (!startCoords || !endCoords) {
-    console.error("  - ❌ Couldn't get coordinates for start or end. Aborting.");
-    return null;
-    };
-    
-    // Calculate direct route distance
-    const directDistance = calculateDistance(startCoords, endCoords);
-    console.log('  - Direct route distance:', directDistance.toFixed(2), 'km');
-    
-    // Add buffer based on route distance (larger buffer for longer routes)
-    const buffer = Math.min(Math.max(directDistance * 0.2, 5), 20); // 20% of distance, min 5km, max 20km
-    console.log('  - Using buffer distance:', buffer.toFixed(2), 'km');
-    
-    // Convert buffer from km to degrees (approximate)
-    const latBuffer = buffer / 111.32; // 1 degree of latitude ≈ 111.32 km
-    const lonBuffer = buffer / (111.32 * Math.cos(startCoords.lat * Math.PI / 180));
-    
-    const minLat = Math.min(startCoords.lat, endCoords.lat) - latBuffer;
-    const maxLat = Math.max(startCoords.lat, endCoords.lat) + latBuffer;
-    const minLon = Math.min(startCoords.lon, endCoords.lon) - lonBuffer;
-    const maxLon = Math.max(startCoords.lon, endCoords.lon) + lonBuffer;
-    
-    const bbox = `${minLat},${minLon},${maxLat},${maxLon}`;
-    console.log('  - ✅ Calculated bounding box:', bbox);
-    return bbox;
-} catch (error) {
-    console.log('  - ❌ Failed to get route bounding box:', error);
-    return null;
-}
 };
 
 export interface DirectionsOptions {

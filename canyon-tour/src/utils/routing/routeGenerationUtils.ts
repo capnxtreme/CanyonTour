@@ -2,7 +2,7 @@ import { SuggestedWaypoint, Coordinates, RouteOption } from '../../types';
 import { calculateDistance } from './geoUtils';
 import { filterWaypointsForStrategy, determineViableStrategies, analyzeWaypoints } from './strategyUtils';
 import { selectNextWaypoint, ScoredWaypoint } from './waypointSelectionUtils';
-import { getDirections } from '../../services/googleMapsService';
+import { getDirections, DirectionsOptions } from '../../services/googleMapsService';
 import { analyzeRouteForOutAndBack, calculateRouteContinuity } from './routeAnalysis';
 
 const MAX_WAYPOINTS = 10;
@@ -23,7 +23,8 @@ async function generateRoute(
     start: Coordinates,
     end: Coordinates,
     strategy: string,
-    forcedStartWaypoint?: SuggestedWaypoint
+    forcedStartWaypoint?: SuggestedWaypoint,
+    directionsOptions: DirectionsOptions = {}
 ): Promise<RouteOption | null> {
     const waypointsForStrategy = filterWaypointsForStrategy(allWaypoints, strategy);
     
@@ -112,7 +113,7 @@ async function generateRoute(
 
     // Fetch real directions from Google
     const waypointCoords = route.map(wp => wp.coordinates!);
-    const directionsResult = await getDirections(start, end, waypointCoords);
+    const directionsResult = await getDirections(start, end, waypointCoords, directionsOptions);
 
     if (!directionsResult) {
         console.log(`Could not fetch directions for ${strategy} route.`);
@@ -160,7 +161,8 @@ async function generateRoute(
 export async function generateRouteOptions(
     allWaypoints: SuggestedWaypoint[],
     start: Coordinates,
-    end: Coordinates
+    end: Coordinates,
+    directionsOptions: DirectionsOptions = {}
 ): Promise<RouteOption[]> {
     if (process.env.NODE_ENV === 'development') {
         console.log("Generating route options...");
@@ -195,7 +197,7 @@ export async function generateRouteOptions(
         
         // Generate the primary route with the best candidate
         const primaryCandidate = initialCandidates[0];
-        routePromises.push(generateRoute(allWaypoints, start, end, strategy, primaryCandidate.waypoint));
+        routePromises.push(generateRoute(allWaypoints, start, end, strategy, primaryCandidate.waypoint, directionsOptions));
 
         // Generate alternative routes for other strong candidates
         if (initialCandidates.length > 1) {
@@ -207,7 +209,7 @@ export async function generateRouteOptions(
 
                 // Only generate alternative if its score is very close to the primary
                 if (alternativeScore > primaryScore * 0.95) { // at least 95% of the primary score
-                    routePromises.push(generateRoute(allWaypoints, start, end, strategy, alternativeCandidate.waypoint));
+                    routePromises.push(generateRoute(allWaypoints, start, end, strategy, alternativeCandidate.waypoint, directionsOptions));
                 }
             }
         }
@@ -231,7 +233,7 @@ export async function generateRouteOptions(
 
     // Add exploration routes that focus on different geographical areas
     const usedWaypointSetsForExploration = generatedRoutes.map(r => new Set(r.waypoints.map(wp => wp.id)));
-    const explorationRoutes = await generateExplorationRoutes(allWaypoints, start, end, usedWaypointSetsForExploration);
+    const explorationRoutes = await generateExplorationRoutes(allWaypoints, start, end, usedWaypointSetsForExploration, directionsOptions);
     generatedRoutes.push(...explorationRoutes);
     
     // Sort routes by a composite quality metric that considers diversity
@@ -289,7 +291,8 @@ async function generateExplorationRoutes(
     allWaypoints: SuggestedWaypoint[],
     start: Coordinates,
     end: Coordinates,
-    usedWaypointSets: Set<string>[]
+    usedWaypointSets: Set<string>[],
+    directionsOptions: DirectionsOptions = {}
 ): Promise<RouteOption[]> {
     const explorationRoutes: Promise<RouteOption | null>[] = [];
     
@@ -301,7 +304,7 @@ async function generateExplorationRoutes(
     
     if (underusedWaypoints.length >= 5) {
         // Generate a "Hidden Gems" route focusing on less common waypoints
-        const hiddenGemsRoutePromise = generateRoute(underusedWaypoints, start, end, 'Adventure Route');
+        const hiddenGemsRoutePromise = generateRoute(underusedWaypoints, start, end, 'Adventure Route', undefined, directionsOptions);
         explorationRoutes.push(hiddenGemsRoutePromise);
     }
     
@@ -318,7 +321,7 @@ async function generateExplorationRoutes(
     
     if (northernWaypoints.length >= 3) {
         const northernStrategy = northernWaypoints.some(wp => (wp.elevation || 0) > 800) ? 'Mountain Route' : 'Twisty';
-        const northernRoutePromise = generateRoute(northernWaypoints, start, end, northernStrategy);
+        const northernRoutePromise = generateRoute(northernWaypoints, start, end, northernStrategy, undefined, directionsOptions);
         explorationRoutes.push(northernRoutePromise);
     }
     
@@ -329,7 +332,7 @@ async function generateExplorationRoutes(
     
     if (southernWaypoints.length >= 3) {
         const southernStrategy = southernWaypoints.some(wp => wp.description?.toLowerCase().includes('valley')) ? 'Valley Route' : 'Balanced';
-        const southernRoutePromise = generateRoute(southernWaypoints, start, end, southernStrategy);
+        const southernRoutePromise = generateRoute(southernWaypoints, start, end, southernStrategy, undefined, directionsOptions);
         explorationRoutes.push(southernRoutePromise);
     }
 

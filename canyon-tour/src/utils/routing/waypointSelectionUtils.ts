@@ -73,6 +73,10 @@ function selectNextWaypoint(
     return selectBestDiverseWaypoint(nearbyWaypoints, currentPosition, end, baseDistance, strategy, routeSoFar, previousPosition, isFirstWaypoint);
 }
 
+// Turns sharper than this relative to the incoming direction of travel are
+// treated as U-turns (retracing steps) and are excluded outright.
+const MAX_TURN_ANGLE_DEGREES = 160;
+
 function selectBestDiverseWaypoint(
     candidateWaypoints: SuggestedWaypoint[],
     currentPosition: Coordinates,
@@ -111,23 +115,21 @@ function selectBestDiverseWaypoint(
         }
     });
     
-    // 2. Simple proximity check to prevent immediately revisiting nearby waypoints
-    // (U-turn prevention removed - will be handled by route analysis instead)
-    scoredWaypoints.forEach(item => {
-        if (routeSoFar.length > 0 && item.waypoint.coordinates) {
-            for (const prevWp of routeSoFar) {
-                const distance = calculateDistance(item.waypoint.coordinates, prevWp.coordinates!);
-                if (distance < 1500) { // 1.5km is too close
-                    const originalScore = item.score;
-                    item.score *= 0.1; // Heavy penalty
-                    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true' && (item.waypoint.location?.toLowerCase().includes('lyons') || item.waypoint.location?.toLowerCase().includes('japatul'))) {
-                        console.log(`%c[Penalty Applied] Proximity penalty for ${item.waypoint.location}. Score reduced from ${originalScore.toFixed(2)} to ${item.score.toFixed(2)}`, 'color: #FF474C;');
-                    }
-                }
+    // 2. Exclude waypoints that would force a U-turn relative to the incoming
+    // direction of travel (rule: never retrace steps; loops are fine).
+    if (previousPosition) {
+        const incomingBearing = geolib.getGreatCircleBearing(previousPosition, currentPosition);
+        scoredWaypoints.forEach(item => {
+            if (!item.waypoint.coordinates) return;
+            const outgoingBearing = geolib.getGreatCircleBearing(currentPosition, item.waypoint.coordinates);
+            const angleDiff = Math.abs(incomingBearing - outgoingBearing);
+            const turnAngle = Math.min(angleDiff, 360 - angleDiff);
+            if (turnAngle > MAX_TURN_ANGLE_DEGREES) {
+                item.score = -Infinity;
             }
-        }
-    });
-    
+        });
+    }
+
     // 3. IMPROVED Forward Progress Requirement: More generous for scenic routes
     if (routeSoFar.length > 0) {
         const currentDistanceToEnd = calculateDistance(currentPosition, end);

@@ -2,17 +2,6 @@ import { SuggestedWaypoint, Coordinates } from '../../types';
 import { calculateDistance } from './geoUtils';
 import * as geolib from 'geolib';
 
-export const STRATEGIES = [
-    'Twisty', 
-    'Balanced', 
-    'Direct', 
-    'Scenic Loop', 
-    'Mountain Route', 
-    'Valley Route',
-    'Adventure Route',
-    'Historic Route'
-];
-
 /**
  * Scores a route segment based on its twistiness and detour cost.
  * Higher scores are better.
@@ -76,15 +65,12 @@ export function scoreWaypoint(
     const score = waypoint.score || 0;
     const strategicValue = waypoint.strategicValue || 0;
 
-    // Add randomization factor for diversity (small but meaningful)
-    const randomizationFactor = (Math.random() - 0.5) * 2.0; // -1.0 to +1.0
-
     // Strategy-specific scoring
     let finalScore = 0;
 
     switch (strategy) {
         case 'Twisty':
-            finalScore = (twistiness * 8.0) + strategicValue + randomizationFactor;
+            finalScore = (twistiness * 8.0) + strategicValue;
             
             const roadType = waypoint.tags?.highway;
             // SIGNIFICANTLY increased secondary road bonus to favor Lyons Valley Road type roads
@@ -122,7 +108,7 @@ export function scoreWaypoint(
             break;
 
         case 'Balanced':
-            finalScore = (twistiness * 1.8) + strategicValue + (elevation / 800) + (score * 0.8) + randomizationFactor;
+            finalScore = (twistiness * 1.8) + strategicValue + (elevation / 800) + (score * 0.8);
             
             // Balanced route prefers moderate values
             if (twistiness > 1.0 && twistiness < 3.0) {
@@ -138,7 +124,7 @@ export function scoreWaypoint(
             break;
 
         case 'Direct':
-            finalScore = strategicValue + randomizationFactor - (twistiness * 2.0);
+            finalScore = strategicValue - (twistiness * 2.0);
             
             // Add a bonus for waypoints that are roughly perpendicular to the direct line to the destination
             const bearingToWaypoint = geolib.getGreatCircleBearing(currentPosition, waypoint.coordinates);
@@ -151,7 +137,7 @@ export function scoreWaypoint(
 
         case 'Scenic Loop':
             // Favor waypoints that create interesting loops and circles back
-            finalScore = (twistiness * 2.0) + (score * 3) + strategicValue + randomizationFactor;
+            finalScore = (twistiness * 2.0) + (score * 3) + strategicValue;
             
             // Bonus for waypoints that might create good loops
             const distanceFromStart = calculateDistance(currentPosition, waypoint.coordinates);
@@ -185,7 +171,7 @@ export function scoreWaypoint(
                                      waypoint.description?.toLowerCase().includes('summit')) ? 8 : 0;
             
             finalScore = elevationBonus + highElevationBonus + mountainBonus + mountainNameBonus + 
-                        (twistiness * 0.8) + strategicValue + randomizationFactor;
+                        (twistiness * 0.8) + strategicValue;
             
             // Penalize low elevation waypoints
             if (elevation < 300) {
@@ -197,8 +183,6 @@ export function scoreWaypoint(
             break;
 
         case 'Valley Route': {
-            let finalScore = 0; // Initialize finalScore for this case
-
             // ENHANCED Valley Road Detection - specifically targeting Lyons Valley Road characteristics
             const hasValleyInName = waypoint.description?.toLowerCase().includes('valley') ||
                                    waypoint.location?.toLowerCase().includes('valley') ||
@@ -257,16 +241,12 @@ export function scoreWaypoint(
             if (lanes > 0 && lanes < 2) return -Infinity;
 
             // Add base factors with increased twistiness weight for valley routes
-            finalScore += (twistiness * 6.0) + strategicValue + randomizationFactor; // Increased from 4.0
+            finalScore += (twistiness * 6.0) + strategicValue; // Increased from 4.0
             
             // Bonus for high twistiness valley roads
             if (twistiness > 2.0 && hasValleyInName) {
                 finalScore += 20.0; // Special bonus for twisty valley roads
             }
-            
-            // Ensure finalScore is used in the switch context
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const _valleyRouteScore = finalScore;
 
             break;
         }
@@ -282,7 +262,7 @@ export function scoreWaypoint(
                                waypoint.description?.toLowerCase().includes('wilderness')) ? 6 : 0;
             
             finalScore = adventureBonus + outdoorBonus + remoteBonus + (twistiness * 0.8) + 
-                        strategicValue + score + randomizationFactor;
+                        strategicValue + score;
             break;
 
         case 'Historic Route':
@@ -296,7 +276,7 @@ export function scoreWaypoint(
                             waypoint.description?.toLowerCase().includes('ancient')) ? 6 : 0;
             
             finalScore = historicBonus + culturalBonus + oldBonus + strategicValue + 
-                        (score * 0.8) + randomizationFactor;
+                        (score * 0.8);
             
             // Slight penalty for high twistiness (historic routes often on older, straighter roads)
             if (twistiness > 2.5) {
@@ -310,7 +290,7 @@ export function scoreWaypoint(
             break;
 
         default:
-            finalScore = twistiness + strategicValue + randomizationFactor;
+            finalScore = twistiness + strategicValue;
             if (distanceFromWaypointToEnd > baseDistance) {
                 return -Infinity;
             }

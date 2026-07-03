@@ -138,25 +138,3 @@ export function calculateRouteContinuity(directionsResult: google.maps.Direction
     
     return continuityScore;
 }
-
-/**
- * Enhanced route analysis that provides detailed insights
- */
-export function getDetailedRouteAnalysis(directionsResult: google.maps.DirectionsResult) {
-    const basicAnalysis = analyzeRouteForOutAndBack(directionsResult);
-    const continuityScore = calculateRouteContinuity(directionsResult);
-    
-    const route = directionsResult.routes[0];
-    const totalDistance = route.legs.reduce((sum, leg) => sum + (leg.distance?.value || 0), 0);
-    const totalDuration = route.legs.reduce((sum, leg) => sum + (leg.duration?.value || 0), 0);
-    
-    return {
-        ...basicAnalysis,
-        continuityScore,
-        totalDistance: totalDistance / 1000, // Convert to km
-        totalDuration: totalDuration / 60,   // Convert to minutes
-        quality: continuityScore > 0.8 ? 'Excellent' : 
-                continuityScore > 0.6 ? 'Good' : 
-                continuityScore > 0.4 ? 'Fair' : 'Poor'
-    };
-}

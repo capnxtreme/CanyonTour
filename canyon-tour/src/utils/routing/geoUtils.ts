@@ -53,17 +53,4 @@ export function getStrategicRoutingDescription(tags: any): string {
     }
     
     return description;
-}
-
-/**
- * Calculates the total distance of a route.
- * @param locations - An array of coordinates representing the route.
- * @returns The total distance in meters.
- */
-export function calculateTotalDistance(locations: Coordinates[]): number {
-    let totalDistance = 0;
-    for (let i = 0; i < locations.length - 1; i++) {
-        totalDistance += geolib.getDistance(locations[i], locations[i+1]);
-    }
-    return totalDistance;
 } 

@@ -8,22 +8,18 @@ export const geocodeLocation = async (location: string): Promise<{ lat: number; 
         console.error('❌ FATAL: Google Maps API key not found. Please set REACT_APP_GOOGLE_MAPS_API_KEY.');
         return null;
       }
-      console.log('  - API key found:', apiKey.substring(0, 10) + '...');
-      
+
       const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(location)}&key=${apiKey}`;
-      console.log('  - Making request to:', url);
-      
+
       const response = await fetch(url);
-      console.log('  - Response status:', response.status);
-      
+
       if (!response.ok) {
         console.error('  - ❌ Geocoding API request failed:', response.status, response.statusText);
         return null;
       }
       
       const data = await response.json();
-      console.log('  - Geocoding response:', JSON.stringify(data, null, 2));
-      
+
       if (data.status === 'OK' && data.results && data.results.length > 0) {
         const result = data.results[0];
         const coords = {
@@ -34,13 +30,6 @@ export const geocodeLocation = async (location: string): Promise<{ lat: number; 
         return coords;
       } else {
         console.log('  - ❌ Geocoding failed for:', location, 'Status:', data.status, 'Error:', data.error_message);
-        
-        // For common test locations that fail, try fallback searches
-        if (location.toLowerCase().includes('julian') && location.toLowerCase().includes('cafe')) {
-          console.log('  - Trying fallback search for Julian area...');
-          return geocodeLocation('Julian, CA');
-        }
-        
         return null;
       }
     } catch (error) {
@@ -116,10 +105,16 @@ try {
 }
 };
 
+export interface DirectionsOptions {
+  avoidHighways?: boolean;
+  avoidTolls?: boolean;
+}
+
 export const getDirections = async (
     start: { lat: number, lon: number },
     end: { lat: number, lon: number },
-    waypoints: { lat: number, lon: number }[]
+    waypoints: { lat: number, lon: number }[],
+    options: DirectionsOptions = {}
   ): Promise<google.maps.DirectionsResult | null> => {
     console.log(`3. Fetching directions from Google with ${waypoints.length} waypoints...`);
     
@@ -139,6 +134,8 @@ export const getDirections = async (
       })),
       optimizeWaypoints: false, // We have already optimized for scenery, not speed
       travelMode: window.google.maps.TravelMode.DRIVING,
+      avoidHighways: !!options.avoidHighways,
+      avoidTolls: !!options.avoidTolls,
     };
   
     try {

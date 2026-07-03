@@ -15,23 +15,35 @@ cd canyon-tour
 ```
 
 ### Core Commands
-- `npm start` - Start development server (http://localhost:3000)
-- `npm test` - Run tests
-- `npm run build` - Build for production
+- `npm start` / `npm run dev` - Start Vite dev server (http://localhost:3000)
+- `npm test` - Run tests once (Vitest); `npm run test:watch` for watch mode
+- `npm run build` - Typecheck (tsc) + production build (Vite, outputs `dist/`)
+- `npm run preview` - Serve the production build locally
+- `npm run demo` - Run the graph routing engine against live Overpass data (no Google key needed)
 - `npm install` - Install dependencies
 
 ### Environment Setup
-- Requires Google Maps API key in `.env` file as `REACT_APP_GOOGLE_MAPS_API_KEY`
+- Requires Google Maps API key in `.env` file as `VITE_GOOGLE_MAPS_API_KEY` (see `.env.example`)
 - No backend required - runs entirely in browser
-- **Optional**: Set `REACT_APP_VERBOSE_LOGGING=true` in `.env.local` to enable detailed debug logging
+- **Optional**: Set `VITE_VERBOSE_LOGGING=true` in `.env.local` to enable detailed debug logging
+- Env access is centralized in `src/utils/env.ts` (Vite `import.meta.env`)
 
 ## Architecture Overview
 
 ### Core Technology Stack
-- **Frontend**: React 19.1.0 with TypeScript, Tailwind CSS
+- **Frontend**: React 19 with TypeScript 5, Tailwind CSS v4
+- **Build**: Vite 8 (dev server, production build), Vitest (tests)
 - **Maps**: Google Maps API for directions and visualization
 - **Data Processing**: Custom OSM integration for road analysis
 - **QR Generation**: qrcode.react for sharing routes
+
+### UI Components (`src/components/`)
+- `RouteForm.tsx` - start/end inputs + search button
+- `RouteOptionsPanel.tsx` - route option cards + waypoint checkboxes
+- `CustomWaypoints.tsx` - user-added waypoint management
+- `PreferencesPanel.tsx` - avoid highways/tolls toggles
+- `SharePanel.tsx` - Google Maps/Waze links + QR code
+- `App.tsx` - state owner and map rendering orchestration
 
 ### Key Architectural Components
 
@@ -142,7 +154,6 @@ interface RouteOption {
 ## Code Conventions
 
 - TypeScript strict mode enabled
-- ES2015 target for broad browser compatibility
 - Functional components with hooks
 - Detailed logging in development mode for route generation debugging
 - Comprehensive error handling for external API calls

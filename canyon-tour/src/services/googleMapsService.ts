@@ -1,11 +1,12 @@
 import { calculateDistance } from '../utils/routingUtils';
+import { getGoogleMapsApiKey } from '../utils/env';
 
 export const geocodeLocation = async (location: string): Promise<{ lat: number; lon: number } | null> => {
     console.log('1. Geocoding location with Google API:', location);
     try {
-      const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+      const apiKey = getGoogleMapsApiKey();
       if (!apiKey) {
-        console.error('❌ FATAL: Google Maps API key not found. Please set REACT_APP_GOOGLE_MAPS_API_KEY.');
+        console.error('❌ FATAL: Google Maps API key not found. Please set VITE_GOOGLE_MAPS_API_KEY.');
         return null;
       }
 

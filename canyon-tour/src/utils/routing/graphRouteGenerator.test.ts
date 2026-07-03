@@ -6,13 +6,15 @@ import { getDirections } from '../../services/googleMapsService';
 import { makeMockDirectionsResult } from '../../testUtils/mockDirections';
 import { buildSyntheticNetwork } from '../../testUtils/syntheticOsm';
 
-jest.mock('../../services/googleMapsService', () => ({
-  getDirections: jest.fn(),
+vi.mock('../../services/googleMapsService', () => ({
+  getDirections: vi.fn(),
 }));
 
+const getDirectionsMock = vi.mocked(getDirections);
+
 beforeEach(() => {
-  (getDirections as jest.Mock).mockClear();
-  (getDirections as jest.Mock).mockImplementation(
+  getDirectionsMock.mockClear();
+  getDirectionsMock.mockImplementation(
     async (start: Coordinates, end: Coordinates, waypoints: Coordinates[]) =>
       makeMockDirectionsResult(start, end, waypoints)
   );

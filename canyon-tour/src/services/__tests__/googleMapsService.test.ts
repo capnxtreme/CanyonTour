@@ -1,14 +1,16 @@
 import { geocodeLocation } from '../googleMapsService';
 
-// Mock environment variable
-process.env.REACT_APP_GOOGLE_MAPS_API_KEY = 'test-key';
-
 // Mock fetch
-global.fetch = jest.fn();
+global.fetch = vi.fn();
 
 describe('googleMapsService', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'test-key');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   describe('geocodeLocation', () => {
@@ -25,7 +27,7 @@ describe('googleMapsService', () => {
         }]
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: async () => mockResponse
       });
@@ -44,7 +46,7 @@ describe('googleMapsService', () => {
         results: []
       };
 
-      (global.fetch as jest.Mock).mockResolvedValueOnce({
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         ok: true,
         json: async () => mockResponse
       });
@@ -55,7 +57,7 @@ describe('googleMapsService', () => {
     });
 
     it('should handle network errors', async () => {
-      (global.fetch as jest.Mock).mockRejectedValueOnce(new Error('Network error'));
+      (global.fetch as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('Network error'));
 
       const result = await geocodeLocation('jamul casino');
       
@@ -63,15 +65,12 @@ describe('googleMapsService', () => {
     });
 
     it('should handle missing API key', async () => {
-      const originalKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
-      delete process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+      vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '');
 
       const result = await geocodeLocation('jamul casino');
       
       expect(result).toBeNull();
-
-      // Restore API key
-      process.env.REACT_APP_GOOGLE_MAPS_API_KEY = originalKey;
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 });

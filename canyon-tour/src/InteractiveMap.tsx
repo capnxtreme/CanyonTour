@@ -1,5 +1,6 @@
 import React from 'react';
 import { GoogleMap, useJsApiLoader } from '@react-google-maps/api';
+import { getGoogleMapsApiKey } from './utils/env';
 
 interface MapProps {
   onLoad: (map: google.maps.Map) => void;
@@ -18,7 +19,7 @@ const defaultCenter = {
 const InteractiveMap: React.FC<MapProps> = ({ onLoad }) => {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
-    googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_API_KEY || ''
+    googleMapsApiKey: getGoogleMapsApiKey() || ''
   });
 
   return isLoaded ? (

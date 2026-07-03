@@ -1,8 +1,10 @@
+import { isDev, isVerboseLogging } from './env';
+
 // Centralized logging system to reduce console noise
 export const Logger = {
   // Main routing events only
   info: (message: string, ...args: any[]) => {
-    if (process.env.NODE_ENV === 'development') {
+    if (isDev()) {
       console.log(`🗺️ ${message}`, ...args);
     }
   },
@@ -18,21 +20,21 @@ export const Logger = {
 
   // Success messages
   success: (message: string, ...args: any[]) => {
-    if (process.env.NODE_ENV === 'development') {
+    if (isDev()) {
       console.log(`✅ ${message}`, ...args);
     }
   },
 
   // Debug - only shows if VERBOSE_LOGGING is enabled
   debug: (message: string, ...args: any[]) => {
-    if (process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true') {
+    if (isDev() && isVerboseLogging()) {
       console.log(`🔧 ${message}`, ...args);
     }
   },
 
   // Route analysis - special formatting
   routeAnalysis: (message: string, isGood: boolean = true) => {
-    if (process.env.NODE_ENV === 'development') {
+    if (isDev()) {
       console.log(`%c[Route Analysis] ${message}`, 
                  isGood ? 'color: #51CF66;' : 'color: #FF6B6B;');
     }
@@ -40,19 +42,17 @@ export const Logger = {
 
   // Performance timing
   time: (label: string) => {
-    if (process.env.NODE_ENV === 'development') {
+    if (isDev()) {
       console.time(`⏱️ ${label}`);
     }
   },
 
   timeEnd: (label: string) => {
-    if (process.env.NODE_ENV === 'development') {
+    if (isDev()) {
       console.timeEnd(`⏱️ ${label}`);
     }
   }
 };
 
 // Helper to check if verbose logging is enabled
-export const isVerbose = () => {
-  return process.env.NODE_ENV === 'development' && process.env.REACT_APP_VERBOSE_LOGGING === 'true';
-};
+export const isVerbose = () => isDev() && isVerboseLogging();

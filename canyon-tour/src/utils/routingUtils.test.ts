@@ -1,6 +1,22 @@
 import { generateRouteOptions } from './routingUtils';
 import { SuggestedWaypoint, Coordinates } from '../types';
 import * as geolib from 'geolib';
+import { getDirections } from '../services/googleMapsService';
+import { makeMockDirectionsResult } from '../testUtils/mockDirections';
+
+// Route generation calls the Google Directions API, which needs the Maps JS
+// SDK loaded in a browser. Replace it with a geometry-faithful mock so the
+// full pipeline (selection, out-and-back analysis, ranking) runs in Jest.
+jest.mock('../services/googleMapsService', () => ({
+  getDirections: jest.fn(),
+}));
+
+beforeEach(() => {
+  (getDirections as jest.Mock).mockImplementation(
+    async (start: Coordinates, end: Coordinates, waypoints: Coordinates[]) =>
+      makeMockDirectionsResult(start, end, waypoints)
+  );
+});
 
 describe('Canyon Tour Routing Logic', () => {
   const startCoords: Coordinates = { lat: 34.0522, lon: -118.2437 }; // Los Angeles
@@ -78,6 +94,16 @@ describe('Canyon Tour Routing Logic', () => {
         expect(turnAngle).toBeLessThan(165); 
       }
     });
+  });
+
+  test('should be deterministic: same inputs produce identical route options', async () => {
+    const first = await generateRouteOptions(mockWaypoints, startCoords, endCoords);
+    const second = await generateRouteOptions(mockWaypoints, startCoords, endCoords);
+
+    const summarize = (options: Awaited<ReturnType<typeof generateRouteOptions>>) =>
+      options.map(o => ({ name: o.name, waypointIds: o.waypoints.map(wp => wp.id) }));
+
+    expect(summarize(second)).toEqual(summarize(first));
   });
 
   test('should handle waypoints with low twistiness scores', async () => {

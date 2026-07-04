@@ -23,7 +23,8 @@ cd canyon-tour
 - `npm install` - Install dependencies
 
 ### Environment Setup
-- Requires Google Maps API key in `.env` file as `VITE_GOOGLE_MAPS_API_KEY` (see `.env.example`)
+- Google Maps API key in `.env` as `VITE_GOOGLE_MAPS_API_KEY` (see `.env.example`) enables the map preview and Google Directions
+- **Keyless mode**: without a key the app still works end-to-end — geocoding falls back to OSM Nominatim, distance/duration are estimated from the road graph, and the Google Maps share URL + QR code are fully functional; only the map preview is unavailable
 - No backend required - runs entirely in browser
 - **Optional**: Set `VITE_VERBOSE_LOGGING=true` in `.env.local` to enable detailed debug logging
 - Env access is centralized in `src/utils/env.ts` (Vite `import.meta.env`)
@@ -39,11 +40,12 @@ cd canyon-tour
 
 ### UI Components (`src/components/`)
 - `RouteForm.tsx` - start/end inputs + search button
-- `RouteOptionsPanel.tsx` - route option cards + waypoint checkboxes
+- `RouteOptionsPanel.tsx` - route option cards (name, distance, duration) + waypoint checkboxes
 - `CustomWaypoints.tsx` - user-added waypoint management
 - `PreferencesPanel.tsx` - avoid highways/tolls toggles
-- `SharePanel.tsx` - Google Maps/Waze links + QR code
-- `App.tsx` - state owner and map rendering orchestration
+- `SharePanel.tsx` - Google Maps/Waze links + QR code + save button
+- `SavedRoutesPanel.tsx` - localStorage-persisted routes (load/delete)
+- `App.tsx` - state owner, status banner, and map rendering orchestration
 
 ### Key Architectural Components
 
@@ -164,6 +166,8 @@ interface RouteOption {
 - Maximum 10 pin waypoints per route (Google Maps limit headroom); one pin
   per ~6 km of path keeps Google glued to the selected roads
 - Pins are never placed within 1.5 km of start/end (Google handles approach)
+- Endpoints snap per connected component (minimizing combined snap distance)
+  so a nearby disconnected road island can never break routing
 - Start/end must snap to the road graph within 30 km or generation aborts
 - Route options that overlap >95% with an existing option are deduplicated
 

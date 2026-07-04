@@ -23,12 +23,33 @@ const SharePanel: React.FC<SharePanelProps> = ({ routeUrl, wazeUrl, wazeSegments
   if (!routeUrl) return null;
 
   const handleCopy = async () => {
+    const markCopied = () => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+    };
+
     try {
       await navigator.clipboard.writeText(routeUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.error('Failed to copy URL:', error);
+      markCopied();
+    } catch {
+      // Clipboard API rejects when the document lacks focus (e.g. embedded /
+      // automated browsers). Fall back to selection-based copy. Chrome can
+      // return false from execCommand in that state even though the copy
+      // succeeded, so only a thrown error counts as failure here.
+      const textarea = document.createElement('textarea');
+      textarea.value = routeUrl;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand('copy');
+        markCopied();
+      } catch (error) {
+        console.error('Failed to copy URL:', error);
+      } finally {
+        document.body.removeChild(textarea);
+      }
     }
   };
 

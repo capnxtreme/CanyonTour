@@ -17,6 +17,7 @@ cd canyon-tour
 ### Core Commands
 - `npm start` / `npm run dev` - Start Vite dev server (http://localhost:3000)
 - `npm test` - Run tests once (Vitest); `npm run test:watch` for watch mode
+- `npm run lint` - ESLint (flat config, typescript-eslint + react-hooks)
 - `npm run build` - Typecheck (tsc) + production build (Vite, outputs `dist/`)
 - `npm run preview` - Serve the production build locally
 - `npm run demo` - Run the graph routing engine against live Overpass data (no Google key needed)
@@ -43,8 +44,8 @@ cd canyon-tour
 - `RouteOptionsPanel.tsx` - route option cards (name, distance, duration) + waypoint checkboxes
 - `CustomWaypoints.tsx` - user-added waypoint management
 - `PreferencesPanel.tsx` - avoid highways/tolls toggles
-- `SharePanel.tsx` - Google Maps/Waze links + QR code + save button
-- `SavedRoutesPanel.tsx` - localStorage-persisted routes (load/delete)
+- `SharePanel.tsx` - Google Maps/Waze links + QR code + copy link + GPX download + save button
+- `SavedRoutesPanel.tsx` - localStorage-persisted routes (load/rename/delete)
 - `App.tsx` - state owner, status banner, and map rendering orchestration
 
 ### Key Architectural Components

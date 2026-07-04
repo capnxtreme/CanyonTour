@@ -13,7 +13,7 @@
 
 import { writeFileSync } from 'fs';
 import { osmClient } from '../src/services/osm/osmClient';
-import { buildRoadGraph, findNearestNode, RoadGraph } from '../src/utils/routing/roadGraph';
+import { buildRoadGraph, snapEndpointsToSharedComponent, RoadGraph } from '../src/utils/routing/roadGraph';
 import {
   findBestPath,
   pathOverlapFraction,
@@ -48,8 +48,12 @@ async function main() {
   const graph = buildRoadGraph(osmData);
   console.log(`\nGraph: ${graph.nodes.size} junction nodes, ${graph.edges.size} edges`);
 
-  const startNode = findNearestNode(graph, START)!;
-  const endNode = findNearestNode(graph, END)!;
+  const snapped = snapEndpointsToSharedComponent(graph, START, END);
+  if (!snapped) {
+    console.error('Could not snap endpoints to a connected road network.');
+    process.exit(1);
+  }
+  const { startNode, endNode } = snapped;
   console.log(`Snapped start to node ${startNode.id}, end to node ${endNode.id}\n`);
 
   const routes: { name: string; path: GraphPath }[] = [];

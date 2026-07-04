@@ -164,13 +164,19 @@ function parseOneway(tags: Record<string, any>): 'no' | 'forward' | 'reverse' {
 /**
  * Finds the graph node closest to the given coordinates. Only considers nodes
  * that participate in at least one edge, so the result is always routable.
+ * Optionally restricted to a set of allowed node IDs.
  */
-export function findNearestNode(graph: RoadGraph, target: Coordinates): GraphNode | null {
+export function findNearestNode(
+  graph: RoadGraph,
+  target: Coordinates,
+  allowedNodes?: Set<number>
+): GraphNode | null {
   let best: GraphNode | null = null;
   let bestDistance = Infinity;
 
   graph.adjacency.forEach((entries, nodeId) => {
     if (entries.length === 0) return;
+    if (allowedNodes && !allowedNodes.has(nodeId)) return;
     const node = graph.nodes.get(nodeId);
     if (!node) return;
     const distance = calculateDistance({ lat: node.lat, lon: node.lon }, target);
@@ -181,4 +187,101 @@ export function findNearestNode(graph: RoadGraph, target: Coordinates): GraphNod
   });
 
   return best;
+}
+
+/**
+ * Labels every routable node with an (undirected) connected-component ID.
+ * Returns the component map plus component sizes.
+ */
+export function computeComponents(graph: RoadGraph): {
+  componentOf: Map<number, number>;
+  componentSizes: Map<number, number>;
+} {
+  const componentOf = new Map<number, number>();
+  const componentSizes = new Map<number, number>();
+  let componentId = 0;
+
+  graph.adjacency.forEach((_, rootId) => {
+    if (componentOf.has(rootId)) return;
+    const queue = [rootId];
+    componentOf.set(rootId, componentId);
+    let size = 0;
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      size++;
+      for (const { neighbor } of graph.adjacency.get(current) || []) {
+        if (!componentOf.has(neighbor)) {
+          componentOf.set(neighbor, componentId);
+          queue.push(neighbor);
+        }
+      }
+    }
+    componentSizes.set(componentId, size);
+    componentId++;
+  });
+
+  return { componentOf, componentSizes };
+}
+
+/**
+ * Snaps start and end to nodes that are guaranteed to lie in the SAME
+ * connected component, choosing the component that minimizes the combined
+ * snap distance. This prevents an endpoint from latching onto a tiny
+ * disconnected island (e.g. a gated residential stub) that happens to be
+ * geographically closest, which would make routing impossible.
+ */
+export function snapEndpointsToSharedComponent(
+  graph: RoadGraph,
+  start: Coordinates,
+  end: Coordinates
+): { startNode: GraphNode; endNode: GraphNode } | null {
+  const { componentOf, componentSizes } = computeComponents(graph);
+  if (componentSizes.size === 0) return null;
+
+  // Track, per component, the nearest node to each endpoint. Minimizing the
+  // combined snap distance naturally rejects small islands: a fragment near
+  // one endpoint is necessarily far from the other.
+  const nearestToStart = new Map<number, { node: GraphNode; distance: number }>();
+  const nearestToEnd = new Map<number, { node: GraphNode; distance: number }>();
+
+  graph.adjacency.forEach((entries, nodeId) => {
+    if (entries.length === 0) return;
+    const component = componentOf.get(nodeId);
+    if (component === undefined) return;
+
+    const node = graph.nodes.get(nodeId);
+    if (!node) return;
+    const coords = { lat: node.lat, lon: node.lon };
+
+    const startDistance = calculateDistance(coords, start);
+    const bestStart = nearestToStart.get(component);
+    if (!bestStart || startDistance < bestStart.distance) {
+      nearestToStart.set(component, { node, distance: startDistance });
+    }
+
+    const endDistance = calculateDistance(coords, end);
+    const bestEnd = nearestToEnd.get(component);
+    if (!bestEnd || endDistance < bestEnd.distance) {
+      nearestToEnd.set(component, { node, distance: endDistance });
+    }
+  });
+
+  let bestStartNode: GraphNode | null = null;
+  let bestEndNode: GraphNode | null = null;
+  let bestCombined = Infinity;
+  nearestToStart.forEach((startCandidate, component) => {
+    const endCandidate = nearestToEnd.get(component);
+    if (!endCandidate) return;
+    if (startCandidate.node.id === endCandidate.node.id) return;
+    const combined = startCandidate.distance + endCandidate.distance;
+    if (combined < bestCombined) {
+      bestStartNode = startCandidate.node;
+      bestEndNode = endCandidate.node;
+      bestCombined = combined;
+    }
+  });
+
+  return bestStartNode && bestEndNode
+    ? { startNode: bestStartNode, endNode: bestEndNode }
+    : null;
 }

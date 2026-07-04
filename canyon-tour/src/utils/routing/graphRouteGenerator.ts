@@ -1,5 +1,5 @@
 import { Coordinates, RouteOption, SuggestedWaypoint } from '../../types';
-import { buildRoadGraph, findNearestNode, RoadGraph } from './roadGraph';
+import { buildRoadGraph, snapEndpointsToSharedComponent, RoadGraph } from './roadGraph';
 import { findBestPath, pathOverlapFraction, parseMaxSpeedMph, GraphPath, ROUTE_PROFILES, RouteProfile } from './graphRouter';
 import { calculateDistance, getStrategicRoutingDescription } from './geoUtils';
 import { getDirections, DirectionsOptions } from '../../services/googleMapsService';
@@ -36,12 +36,12 @@ export async function generateScenicRouteOptions(
     return [];
   }
 
-  const startNode = findNearestNode(graph, start);
-  const endNode = findNearestNode(graph, end);
-  if (!startNode || !endNode || startNode.id === endNode.id) {
-    console.warn('Could not snap start/end to the road graph.');
+  const snapped = snapEndpointsToSharedComponent(graph, start, end);
+  if (!snapped) {
+    console.warn('Could not snap start/end to a connected road network.');
     return [];
   }
+  const { startNode, endNode } = snapped;
   const startSnapDistance = calculateDistance(start, { lat: startNode.lat, lon: startNode.lon });
   const endSnapDistance = calculateDistance(end, { lat: endNode.lat, lon: endNode.lon });
   if (startSnapDistance > MAX_SNAP_DISTANCE_METERS || endSnapDistance > MAX_SNAP_DISTANCE_METERS) {

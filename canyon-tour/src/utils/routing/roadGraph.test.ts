@@ -1,4 +1,4 @@
-import { buildRoadGraph, findNearestNode } from './roadGraph';
+import { buildRoadGraph, findNearestNode, snapEndpointsToSharedComponent } from './roadGraph';
 import { findBestPath, ROUTE_PROFILES } from './graphRouter';
 import lyonsValleyFixture from '../../services/osm/__fixtures__/lyons_valley.json';
 import { buildSyntheticNetwork, NODE_A_ID, NODE_B_ID } from '../../testUtils/syntheticOsm';
@@ -118,6 +118,37 @@ describe('findBestPath (synthetic network)', () => {
     const path = findBestPath(graph, NODE_A_ID, NODE_B_ID, twistyProfile)!;
     const uniqueNodes = new Set(path.nodeIds);
     expect(uniqueNodes.size).toBe(path.nodeIds.length);
+  });
+
+  test('endpoint snapping skips disconnected islands (regression: Jamul stub roads)', () => {
+    // Add a tiny isolated residential stub RIGHT at the start coordinates.
+    // Naive nearest-node snapping would pick it and make routing impossible.
+    const network = buildSyntheticNetwork();
+    network.elements.push(
+      { type: 'node', id: 950, lat: 32.70001, lon: -116.90001 },
+      { type: 'node', id: 951, lat: 32.70050, lon: -116.90050 },
+      {
+        type: 'way',
+        id: 4000,
+        nodes: [950, 951],
+        tags: { highway: 'residential', surface: 'asphalt' },
+      }
+    );
+    const graphWithIsland = buildRoadGraph(network);
+
+    const start = { lat: 32.7, lon: -116.9 };   // exactly between island and main network
+    const end = { lat: 32.7, lon: -116.8 };     // only reachable via main network
+
+    // Naive snapping picks the island node (it is at least as close)...
+    const naive = findNearestNode(graphWithIsland, { lat: 32.70001, lon: -116.90001 });
+    expect([950, 951]).toContain(naive!.id);
+
+    // ...but component-aware snapping picks nodes that can actually reach each other.
+    const snapped = snapEndpointsToSharedComponent(graphWithIsland, start, end);
+    expect(snapped).not.toBeNull();
+    const path = findBestPath(graphWithIsland, snapped!.startNode.id, snapped!.endNode.id, ROUTE_PROFILES[0]);
+    expect(path).not.toBeNull();
+    expect(path!.totalLengthMeters).toBeGreaterThan(1000);
   });
 
   test('returns null for disconnected nodes', () => {

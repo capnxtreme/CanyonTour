@@ -1,46 +1,98 @@
-# Getting Started with Create React App
+# 🏔️ Canyon Tour
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Plan and share twisty, scenic canyon drives. Canyon Tour analyzes OpenStreetMap
+road data to find genuinely curvy 2-lane roads between two locations, builds
+optimized routes, and produces a Google Maps link + QR code (and GPX file) so
+you and your friends can navigate them.
 
-## Available Scripts
+## How it works
 
-In the project directory, you can run:
+1. Enter a start and end location.
+2. The app fetches raw road data for the corridor from the OpenStreetMap
+   Overpass API and builds a **topology road graph** (ways split into edges at
+   shared junction nodes — no street-name matching).
+3. A cost-based shortest-path search runs per route profile: twisty,
+   2-lane, secondary, 45–65 mph roads cost *less* than their physical length,
+   so the optimal path naturally detours onto them. Unpaved and sub-2-lane
+   roads never enter the graph. Retracing steps is impossible by construction.
+4. Pin waypoints are emitted along the chosen path so Google Maps follows the
+   selected roads.
+5. Share the result as a Google Maps URL, QR code, Waze links, or a GPX file.
 
-### `npm start`
+Route profiles: **Twisty Explorer** (max curves, generous detours),
+**Balanced Scenic**, **Most Direct**, plus a meaningfully different
+**Alternative** scenic route when one exists.
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## Quick start
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+```bash
+npm install
+npm run dev        # http://localhost:3000
+```
 
-### `npm test`
+### Google Maps API key (optional but recommended)
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+```bash
+cp .env.example .env
+# then edit .env:
+# VITE_GOOGLE_MAPS_API_KEY=your-key
+```
 
-### `npm run build`
+The key enables the interactive map preview and real Google Directions
+distances/times. It needs the **Maps JavaScript API**, **Directions API**, and
+**Geocoding API** enabled, and should be restricted (HTTP referrers + API
+restrictions) since it ships in the browser bundle.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+**Keyless mode**: without a key the app still works end-to-end — geocoding
+falls back to OSM Nominatim, distance/duration are estimated from the road
+graph, and the share URL, QR code, and GPX export are fully functional. Only
+the map preview is unavailable.
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Commands
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+| Command | What it does |
+|---|---|
+| `npm run dev` / `npm start` | Vite dev server on port 3000 |
+| `npm test` | Run the test suite once (Vitest) |
+| `npm run test:watch` | Tests in watch mode |
+| `npm run lint` | ESLint |
+| `npm run build` | Typecheck (tsc) + production build to `dist/` |
+| `npm run preview` | Serve the production build |
+| `npm run demo` | Run the routing engine against live Overpass data and render an SVG route map — no API key needed |
 
-### `npm run eject`
+## Project structure
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+```
+src/
+  components/          UI components (form, options, share, saved routes)
+  services/
+    osm/               Overpass client, road suitability, twistiness calc
+    googleMapsService  Geocoding (Google or Nominatim fallback) + Directions
+  utils/
+    routing/
+      roadGraph.ts             OSM data -> topology road graph
+      graphRouter.ts           cost profiles + Dijkstra path search
+      graphRouteGenerator.ts   route options + pin waypoint emission
+    gpxExport.ts       GPX 1.1 export of the selected route
+    savedRoutes.ts     localStorage persistence
+scripts/
+  demoGraphRoute.ts    offline engine demo/debugging tool
+```
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Routing rules
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+The road selection logic uses **OSM metadata only** (highway class, lanes,
+maxspeed, surface, access, geometry) — never street names. See
+`.cursor/rules/routing.mdc` and `CLAUDE.md` at the repository root for the
+full rules and architecture documentation.
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+## Testing
 
-## Learn More
+Tests run offline and deterministically: a real Overpass response for the
+Lyons Valley Road corridor is checked in as a fixture, a synthetic two-road
+network exercises profile behavior, and Google Directions is mocked with a
+geometry-faithful builder.
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
+```bash
+npm test
+```

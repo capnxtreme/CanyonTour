@@ -45,3 +45,12 @@ export function deleteSavedRoute(id: string): SavedRoute[] {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(routes));
   return routes;
 }
+
+export function renameSavedRoute(id: string, name: string): SavedRoute[] {
+  const trimmed = name.trim();
+  const routes = getSavedRoutes().map(route =>
+    route.id === id && trimmed.length > 0 ? { ...route, name: trimmed } : route
+  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(routes));
+  return routes;
+}

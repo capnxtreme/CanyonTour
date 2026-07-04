@@ -93,6 +93,7 @@ export async function generateScenicRouteOptions(
         `average twistiness ${path.averageTwistiness.toFixed(1)}.`,
       waypoints,
       totalTwistiness: path.averageTwistiness,
+      pathGeometry: pathToPolyline(path).map(({ point }) => point),
     };
 
     if (directions) {

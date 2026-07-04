@@ -49,4 +49,6 @@ export interface Coordinates {
     directions?: google.maps.DirectionsResult;
     continuityScore?: number;
     routeAnalysis?: any; // Will contain the route analysis data
+    /** Full road geometry of the selected graph path (for GPX export / rendering). */
+    pathGeometry?: Coordinates[];
   } 

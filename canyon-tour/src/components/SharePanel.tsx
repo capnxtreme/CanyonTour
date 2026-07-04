@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { RouteOption } from '../types';
+import { routeToGpx, gpxFilename } from '../utils/gpxExport';
 
 export interface WazeSegment {
   url: string;
@@ -11,11 +13,36 @@ interface SharePanelProps {
   routeUrl: string;
   wazeUrl: string;
   wazeSegments: WazeSegment[];
+  selectedRoute: RouteOption | null;
   onSave: () => void;
 }
 
-const SharePanel: React.FC<SharePanelProps> = ({ routeUrl, wazeUrl, wazeSegments, onSave }) => {
+const SharePanel: React.FC<SharePanelProps> = ({ routeUrl, wazeUrl, wazeSegments, selectedRoute, onSave }) => {
+  const [copied, setCopied] = useState(false);
+
   if (!routeUrl) return null;
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(routeUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy URL:', error);
+    }
+  };
+
+  const handleDownloadGpx = () => {
+    if (!selectedRoute) return;
+    const gpx = routeToGpx(selectedRoute);
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = gpxFilename(selectedRoute);
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
@@ -30,7 +57,25 @@ const SharePanel: React.FC<SharePanelProps> = ({ routeUrl, wazeUrl, wazeSegments
       </div>
 
       <div className="mb-4">
-        <h3 className="text-lg font-medium text-gray-800">Google Maps Route</h3>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-lg font-medium text-gray-800">Google Maps Route</h3>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={handleCopy}
+              className="px-3 py-1 bg-gray-600 text-white text-sm rounded-md hover:bg-gray-700 transition-colors"
+            >
+              {copied ? '✓ Copied!' : '📋 Copy Link'}
+            </button>
+            {selectedRoute && (
+              <button
+                onClick={handleDownloadGpx}
+                className="px-3 py-1 bg-teal-600 text-white text-sm rounded-md hover:bg-teal-700 transition-colors"
+              >
+                ⬇ Download GPX
+              </button>
+            )}
+          </div>
+        </div>
         <div className="bg-gray-100 p-3 rounded-md mb-3">
           <a href={routeUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 break-all text-sm">{routeUrl}</a>
         </div>

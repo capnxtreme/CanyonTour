@@ -23,7 +23,7 @@ export function getStrategicRoutingDescription(tags: any): string {
     const name = tags.name;
     const ref = tags.ref;
     
-    let description = '';
+    let description: string;
     
     if (highway) {
         switch (highway) {

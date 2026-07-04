@@ -93,7 +93,7 @@ export function analyzeRouteForOutAndBack(directionsResult: google.maps.Directio
     // Count continuous segments (segments that don't backtrack)
     const continuousSegments = Math.max(visitedAreas.length - Math.floor(backtrackDistance / 2000), 1);
 
-    let analysis = "";
+    let analysis: string;
     if (hasOutAndBack) {
         analysis = `Route contains ${backtrackPercentage.toFixed(1)}% backtracking (${(backtrackDistance/1000).toFixed(1)}km of ${(totalDistance/1000).toFixed(1)}km total)`;
     } else {

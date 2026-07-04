@@ -1,4 +1,4 @@
-import { getSavedRoutes, saveRoute, deleteSavedRoute } from './savedRoutes';
+import { getSavedRoutes, saveRoute, deleteSavedRoute, renameSavedRoute } from './savedRoutes';
 
 describe('savedRoutes', () => {
   beforeEach(() => {
@@ -43,6 +43,21 @@ describe('savedRoutes', () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0].id).toBe(keep.id);
     expect(getSavedRoutes()).toHaveLength(1);
+  });
+
+  test('renames a route by id', () => {
+    const saved = saveRoute({ name: 'old name', start: 'a', end: 'b', waypointLocations: [], routeUrl: 'u', wazeUrl: '' });
+
+    const updated = renameSavedRoute(saved.id, '  Sunday Canyon Run  ');
+    expect(updated[0].name).toBe('Sunday Canyon Run');
+    expect(getSavedRoutes()[0].name).toBe('Sunday Canyon Run');
+  });
+
+  test('ignores rename to empty name', () => {
+    const saved = saveRoute({ name: 'keep me', start: 'a', end: 'b', waypointLocations: [], routeUrl: 'u', wazeUrl: '' });
+
+    const updated = renameSavedRoute(saved.id, '   ');
+    expect(updated[0].name).toBe('keep me');
   });
 
   test('survives corrupted storage gracefully', () => {

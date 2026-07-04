@@ -64,7 +64,7 @@ out;`;
         }
 
         break;
-      } catch (error) {
+      } catch {
         console.log(`  - Error fetching from Overpass API. Retry ${retryCount + 1}/${this.maxRetries}...`);
         await this.delay(this.retryDelay);
         retryCount++;

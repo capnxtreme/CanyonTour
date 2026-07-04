@@ -12,7 +12,7 @@ import { geocodeLocation } from './services/googleMapsService';
 import { fetchOsmRoadData } from './services/osm';
 import { generateScenicRouteOptions } from './utils/routingUtils';
 import { Logger } from './utils/logger';
-import { SavedRoute, getSavedRoutes, saveRoute, deleteSavedRoute } from './utils/savedRoutes';
+import { SavedRoute, getSavedRoutes, saveRoute, deleteSavedRoute, renameSavedRoute } from './utils/savedRoutes';
 
 interface StatusMessage {
   type: 'error' | 'info' | 'success';
@@ -197,8 +197,9 @@ function App() {
     const googleUrl = generateRouteURL(waypointsForUrl);
     setRouteUrl(googleUrl);
 
-    const wazeDestination = route.waypoints.length > 0 ? route.waypoints[0].location : route.end;
-    setWazeUrl(`https://waze.com/ul?q=${encodeURIComponent(wazeDestination)}&navigate=yes`);
+    // Waze deep links only support a single destination; the multi-segment
+    // list covers the intermediate waypoints.
+    setWazeUrl(`https://waze.com/ul?q=${encodeURIComponent(route.end)}&navigate=yes`);
   };
 
   const generateRouteURL = (waypoints: (string | { lat: number, lon: number })[]) => {
@@ -275,6 +276,10 @@ function App() {
     setSavedRoutes(deleteSavedRoute(id));
   };
 
+  const handleRenameSavedRoute = (id: string, name: string) => {
+    setSavedRoutes(renameSavedRoute(id, name));
+  };
+
   const checkedSuggestionsCount = selectedRoute?.waypoints.filter(wp => wp.checked).length || 0;
 
   return (
@@ -343,11 +348,18 @@ function App() {
             </div>
           </div>
 
-          <SharePanel routeUrl={routeUrl} wazeUrl={wazeUrl} wazeSegments={wazeSegments} onSave={handleSaveRoute} />
+          <SharePanel
+            routeUrl={routeUrl}
+            wazeUrl={wazeUrl}
+            wazeSegments={wazeSegments}
+            selectedRoute={selectedRoute}
+            onSave={handleSaveRoute}
+          />
 
           <SavedRoutesPanel
             savedRoutes={savedRoutes}
             onLoad={handleLoadSavedRoute}
+            onRename={handleRenameSavedRoute}
             onDelete={handleDeleteSavedRoute}
           />
         </div>

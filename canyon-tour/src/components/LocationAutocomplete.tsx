@@ -79,8 +79,16 @@ const LocationAutocomplete: React.FC<LocationAutocompleteProps> = ({
           lat: parseFloat(r.lat),
           lon: parseFloat(r.lon),
         }));
-        setSuggestions(mapped);
-        setOpen(mapped.length > 0);
+        // Nominatim sometimes returns near-identical hits; keep the first of each cluster.
+        const seen = new Set<string>();
+        const unique = mapped.filter(s => {
+          const key = `${s.lat.toFixed(4)},${s.lon.toFixed(4)}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setSuggestions(unique);
+        setOpen(unique.length > 0);
         setActiveIndex(-1);
       } catch (error: unknown) {
         if (!(error instanceof DOMException && error.name === 'AbortError')) {

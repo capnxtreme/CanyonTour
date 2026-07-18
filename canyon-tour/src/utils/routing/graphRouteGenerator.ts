@@ -56,8 +56,12 @@ export async function generateScenicRouteOptions(
   for (const profile of ROUTE_PROFILES) {
     const path = findBestPath(graph, startNode.id, endNode.id, profile);
     if (!path) continue;
-    // Skip profiles that resolve to (almost) the same road choice as one we have.
-    const isDuplicate = paths.some(existing => pathOverlapFraction(path, existing.path) > PROFILE_DEDUP_OVERLAP);
+    // Always keep Most Direct as a length baseline, even when it shares most
+    // of its edges with a scenic profile (common on single-corridor trips).
+    const isDirect = profile.name === 'Most Direct';
+    const isDuplicate =
+      !isDirect &&
+      paths.some(existing => pathOverlapFraction(path, existing.path) > PROFILE_DEDUP_OVERLAP);
     if (!isDuplicate) {
       paths.push({ profile, path });
     }

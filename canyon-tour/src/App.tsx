@@ -7,12 +7,13 @@ import CustomWaypoints from './components/CustomWaypoints';
 import PreferencesPanel from './components/PreferencesPanel';
 import SharePanel, { WazeSegment } from './components/SharePanel';
 import SavedRoutesPanel from './components/SavedRoutesPanel';
-import { Route, RoutePreferences, RouteOption } from './types';
+import { Route, RoutePreferences, RouteOption, Coordinates } from './types';
 import { geocodeLocation } from './services/googleMapsService';
 import { fetchOsmRoadData } from './services/osm';
 import { generateScenicRouteOptions } from './utils/routingUtils';
 import { Logger } from './utils/logger';
 import { SavedRoute, getSavedRoutes, saveRoute, deleteSavedRoute, renameSavedRoute } from './utils/savedRoutes';
+import type { LocationSuggestion } from './components/LocationAutocomplete';
 
 interface StatusMessage {
   type: 'error' | 'info' | 'success';
@@ -35,6 +36,9 @@ function App() {
   const [routeOptions, setRouteOptions] = useState<RouteOption[]>([]);
   const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
+  const [startCoords, setStartCoords] = useState<Coordinates | null>(null);
+  const [endCoords, setEndCoords] = useState<Coordinates | null>(null);
   const [statusMessage, setStatusMessage] = useState<StatusMessage | null>(null);
   const [savedRoutes, setSavedRoutes] = useState<SavedRoute[]>(() => getSavedRoutes());
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -55,6 +59,7 @@ function App() {
     }
 
     setIsLoadingSuggestions(true);
+    setLoadingStatus('Geocoding…');
     setRouteOptions([]);
     setSelectedRouteIndex(null);
     setStatusMessage(null);
@@ -62,23 +67,37 @@ function App() {
     Logger.time('Route Discovery');
 
     try {
-      const startCoords = await geocodeLocation(route.start);
-      if (!startCoords) {
+      // Reuse coords from autocomplete when available; otherwise geocode the text.
+      let resolvedStart = startCoords;
+      let resolvedEnd = endCoords;
+
+      if (!resolvedStart) {
+        resolvedStart = await geocodeLocation(route.start);
+      }
+      if (!resolvedStart) {
         setStatusMessage({ type: 'error', text: `Couldn't find "${route.start}". Try a more specific address or add a city/state.` });
         return;
       }
-      const endCoords = await geocodeLocation(route.end);
-      if (!endCoords) {
+
+      if (!resolvedEnd) {
+        resolvedEnd = await geocodeLocation(route.end);
+      }
+      if (!resolvedEnd) {
         setStatusMessage({ type: 'error', text: `Couldn't find "${route.end}". Try a more specific address or add a city/state.` });
         return;
       }
 
-      const roadData = await fetchOsmRoadData(startCoords, endCoords);
+      setStartCoords(resolvedStart);
+      setEndCoords(resolvedEnd);
+
+      setLoadingStatus('Fetching roads…');
+      const roadData = await fetchOsmRoadData(resolvedStart, resolvedEnd);
 
       if (!roadData) {
         setStatusMessage({ type: 'error', text: 'Could not load road data for this area. The OpenStreetMap service may be busy — try again in a minute.' });
       } else {
-        const options = await generateScenicRouteOptions(roadData, startCoords, endCoords, {
+        setLoadingStatus('Building routes…');
+        const options = await generateScenicRouteOptions(roadData, resolvedStart, resolvedEnd, {
           avoidHighways: preferences.avoidHighways,
           avoidTolls: preferences.avoidTolls
         });
@@ -96,6 +115,7 @@ function App() {
     } finally {
       Logger.timeEnd('Route Discovery');
       setIsLoadingSuggestions(false);
+      setLoadingStatus(null);
     }
   };
 
@@ -265,11 +285,33 @@ function App() {
 
   const handleLoadSavedRoute = (saved: SavedRoute) => {
     setRoute({ start: saved.start, end: saved.end, waypoints: [] });
+    setStartCoords(null);
+    setEndCoords(null);
     setRouteOptions([]);
     setSelectedRouteIndex(null);
     setRouteUrl(saved.routeUrl);
     setWazeUrl(saved.wazeUrl);
     setStatusMessage({ type: 'info', text: `Loaded "${saved.name}". Scan the QR code or press "Find Scenic Routes" to regenerate options.` });
+  };
+
+  const handleStartChange = (start: string) => {
+    setRoute(prev => ({ ...prev, start }));
+    setStartCoords(null);
+  };
+
+  const handleEndChange = (end: string) => {
+    setRoute(prev => ({ ...prev, end }));
+    setEndCoords(null);
+  };
+
+  const handleStartSelect = (suggestion: LocationSuggestion) => {
+    setRoute(prev => ({ ...prev, start: suggestion.label }));
+    setStartCoords({ lat: suggestion.lat, lon: suggestion.lon });
+  };
+
+  const handleEndSelect = (suggestion: LocationSuggestion) => {
+    setRoute(prev => ({ ...prev, end: suggestion.label }));
+    setEndCoords({ lat: suggestion.lat, lon: suggestion.lon });
   };
 
   const handleDeleteSavedRoute = (id: string) => {
@@ -316,8 +358,11 @@ function App() {
                 start={route.start}
                 end={route.end}
                 isLoading={isLoadingSuggestions}
-                onStartChange={(start) => setRoute(prev => ({ ...prev, start }))}
-                onEndChange={(end) => setRoute(prev => ({ ...prev, end }))}
+                loadingStatus={loadingStatus}
+                onStartChange={handleStartChange}
+                onEndChange={handleEndChange}
+                onStartSelect={handleStartSelect}
+                onEndSelect={handleEndSelect}
                 onSearch={handleSearch}
               />
 
@@ -325,6 +370,7 @@ function App() {
                 routeOptions={routeOptions}
                 selectedRouteIndex={selectedRouteIndex}
                 isLoading={isLoadingSuggestions}
+                loadingStatus={loadingStatus}
                 onSelectRoute={setSelectedRouteIndex}
                 onToggleWaypoint={toggleSuggestedWaypoint}
               />
@@ -367,6 +413,9 @@ function App() {
       <div className="map-container">
         <InteractiveMap
           onLoad={onMapLoad}
+          selectedRoute={selectedRoute}
+          startCoords={startCoords}
+          endCoords={endCoords}
         />
       </div>
     </div>

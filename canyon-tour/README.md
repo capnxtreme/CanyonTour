@@ -20,8 +20,8 @@ you and your friends can navigate them.
 5. Share the result as a Google Maps URL, QR code, Waze links, or a GPX file.
 
 Route profiles: **Twisty Explorer** (max curves, generous detours),
-**Balanced Scenic**, **Most Direct**, plus a meaningfully different
-**Alternative** scenic route when one exists.
+**Balanced Scenic**, **Most Direct**, plus up to two meaningfully different
+**Alternative** scenic routes when parallel corridors exist.
 
 ## Quick start
 
@@ -44,9 +44,10 @@ distances/times. It needs the **Maps JavaScript API**, **Directions API**, and
 restrictions) since it ships in the browser bundle.
 
 **Keyless mode**: without a key the app still works end-to-end — geocoding
-falls back to OSM Nominatim, distance/duration are estimated from the road
-graph, and the share URL, QR code, and GPX export are fully functional. Only
-the map preview is unavailable.
+falls back to OSM Nominatim (with search-as-you-type autocomplete),
+distance/duration are estimated from the road graph, an SVG path preview
+replaces the Google map, and the share URL, QR code, and GPX export are
+fully functional.
 
 ## Commands
 

@@ -25,7 +25,7 @@ cd canyon-tour
 
 ### Environment Setup
 - Google Maps API key in `.env` as `VITE_GOOGLE_MAPS_API_KEY` (see `.env.example`) enables the map preview and Google Directions
-- **Keyless mode**: without a key the app still works end-to-end — geocoding falls back to OSM Nominatim, distance/duration are estimated from the road graph, and the Google Maps share URL + QR code are fully functional; only the map preview is unavailable
+- **Keyless mode**: without a key the app still works end-to-end — geocoding falls back to OSM Nominatim (with search-as-you-type autocomplete), distance/duration are estimated from the road graph, an SVG path preview replaces the Google map, and the Google Maps share URL + QR code are fully functional
 - No backend required - runs entirely in browser
 - **Optional**: Set `VITE_VERBOSE_LOGGING=true` in `.env.local` to enable detailed debug logging
 - Env access is centralized in `src/utils/env.ts` (Vite `import.meta.env`)
@@ -40,7 +40,9 @@ cd canyon-tour
 - **QR Generation**: qrcode.react for sharing routes
 
 ### UI Components (`src/components/`)
-- `RouteForm.tsx` - start/end inputs + search button
+- `RouteForm.tsx` - start/end inputs + search button (with staged loading status)
+- `LocationAutocomplete.tsx` - debounced Nominatim search-as-you-type (keyless)
+- `RoutePreview.tsx` - SVG path preview when no Google Maps key
 - `RouteOptionsPanel.tsx` - route option cards (name, distance, duration) + waypoint checkboxes
 - `CustomWaypoints.tsx` - user-added waypoint management
 - `PreferencesPanel.tsx` - avoid highways/tolls toggles
@@ -86,8 +88,10 @@ Route diversity comes from cost profiles, not waypoint heuristics:
   roads; accepts long detours
 - **Balanced Scenic**: moderate scenic preference with a smaller detour budget
 - **Most Direct**: shortest allowed path (still avoids unpaved/narrow roads)
-- **Twisty Explorer (Alternative)**: re-route with the primary scenic route's
-  edges penalized, kept only if it is meaningfully different (<70% overlap)
+- **Twisty Explorer (Alternative / Alternative 2)**: re-route with escalating
+  penalties on already-chosen edges; kept only if meaningfully different
+  (<70% overlap). Up to two alternatives so corridors with parallel scenic
+  roads still offer choice when base profiles collapse.
 
 #### 4. Road Filtering Logic (from `.cursor/rules/routing.mdc`)
 **Prioritize:**

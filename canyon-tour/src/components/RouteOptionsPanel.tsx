@@ -5,6 +5,7 @@ interface RouteOptionsPanelProps {
   routeOptions: RouteOption[];
   selectedRouteIndex: number | null;
   isLoading: boolean;
+  loadingStatus?: string | null;
   onSelectRoute: (index: number) => void;
   onToggleWaypoint: (id: string) => void;
 }
@@ -13,6 +14,7 @@ const RouteOptionsPanel: React.FC<RouteOptionsPanelProps> = ({
   routeOptions,
   selectedRouteIndex,
   isLoading,
+  loadingStatus,
   onSelectRoute,
   onToggleWaypoint,
 }) => {
@@ -31,7 +33,9 @@ const RouteOptionsPanel: React.FC<RouteOptionsPanelProps> = ({
       {isLoading ? (
         <div className="flex items-center space-x-3 py-4">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-          <div className="text-blue-600 font-medium">Analyzing roads for maximum twistiness...</div>
+          <div className="text-blue-600 font-medium">
+            {loadingStatus || 'Analyzing roads for maximum twistiness...'}
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

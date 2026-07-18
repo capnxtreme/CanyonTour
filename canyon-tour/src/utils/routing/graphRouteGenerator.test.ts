@@ -4,7 +4,7 @@ import { findBestPath, ROUTE_PROFILES } from './graphRouter';
 import { Coordinates } from '../../types';
 import { getDirections } from '../../services/googleMapsService';
 import { makeMockDirectionsResult } from '../../testUtils/mockDirections';
-import { buildSyntheticNetwork } from '../../testUtils/syntheticOsm';
+import { buildSyntheticNetwork, buildSyntheticNetworkWithAlternatives } from '../../testUtils/syntheticOsm';
 
 vi.mock('../../services/googleMapsService', () => ({
   getDirections: vi.fn(),
@@ -84,7 +84,35 @@ describe('generateScenicRouteOptions', () => {
       expect(option.distance).toBeGreaterThan(5);
       expect(option.duration).toBeGreaterThan(0);
       expect(option.waypoints.length).toBeGreaterThan(0);
+      expect(option.pathGeometry?.length).toBeGreaterThan(1);
     });
+  });
+
+  test('includes pathGeometry for SVG preview', async () => {
+    const options = await generateScenicRouteOptions(buildSyntheticNetwork(), start, end);
+    options.forEach(option => {
+      expect(option.pathGeometry).toBeDefined();
+      expect(option.pathGeometry!.length).toBeGreaterThan(1);
+      option.pathGeometry!.forEach(p => {
+        expect(typeof p.lat).toBe('number');
+        expect(typeof p.lon).toBe('number');
+      });
+    });
+  });
+
+  test('produces an alternative when parallel corridors exist', async () => {
+    const options = await generateScenicRouteOptions(
+      buildSyntheticNetworkWithAlternatives(),
+      start,
+      end
+    );
+
+    expect(options.length).toBeGreaterThanOrEqual(2);
+    const alt = options.find(o => o.name.includes('Alternative'));
+    // With three corridors, edge penalties should surface at least one alternative
+    // once Twisty + Direct claim the two extremes.
+    expect(alt).toBeDefined();
+    expect(alt!.pathGeometry!.length).toBeGreaterThan(1);
   });
 
   test('returns empty list when the area has no suitable roads', async () => {

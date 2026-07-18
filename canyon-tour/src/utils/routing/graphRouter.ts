@@ -33,26 +33,30 @@ export const ROUTE_PROFILES: RouteProfile[] = [
   {
     name: 'Twisty Explorer',
     description: 'Maximizes curvy 2-lane secondary roads, accepting longer detours.',
-    twistinessWeight: 0.55,
-    highwayMultipliers: { secondary: 0.6, tertiary: 0.75, unclassified: 0.9, residential: 1.4, primary: 1.1 },
-    straightPenalty: 1.25,
-    idealSpeedMultiplier: 0.85,
-    twoLaneMultiplier: 0.9,
+    // Strong curvature discount + heavy straight-road penalty so this profile
+    // will take a longer corridor when a twistier one exists.
+    twistinessWeight: 0.7,
+    highwayMultipliers: { secondary: 0.5, tertiary: 0.65, unclassified: 0.8, residential: 1.6, primary: 1.35 },
+    straightPenalty: 1.6,
+    idealSpeedMultiplier: 0.8,
+    twoLaneMultiplier: 0.85,
   },
   {
     name: 'Balanced Scenic',
     description: 'Prefers scenic roads with a moderate detour budget.',
-    twistinessWeight: 0.35,
-    highwayMultipliers: { secondary: 0.8, tertiary: 0.9, unclassified: 1.0, residential: 1.2, primary: 1.0 },
-    straightPenalty: 1.1,
+    twistinessWeight: 0.4,
+    highwayMultipliers: { secondary: 0.75, tertiary: 0.85, unclassified: 0.95, residential: 1.25, primary: 1.05 },
+    straightPenalty: 1.2,
     idealSpeedMultiplier: 0.9,
-    twoLaneMultiplier: 0.95,
+    twoLaneMultiplier: 0.92,
   },
   {
     name: 'Most Direct',
     description: 'Shortest allowed route (still avoids unpaved and narrow roads).',
+    // Pure length, but gently prefer higher-class roads so Direct doesn't
+    // collapse onto the same secondary corridor as Twisty by accident.
     twistinessWeight: 0,
-    highwayMultipliers: { secondary: 1, tertiary: 1, unclassified: 1, residential: 1, primary: 1 },
+    highwayMultipliers: { secondary: 1.05, tertiary: 1.05, unclassified: 1.1, residential: 1.2, primary: 0.95 },
     straightPenalty: 1,
     idealSpeedMultiplier: 1,
     twoLaneMultiplier: 1,

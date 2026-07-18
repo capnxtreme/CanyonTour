@@ -23,6 +23,8 @@ const ENDPOINT_CLEARANCE_METERS = 1500;
 const MAX_SNAP_DISTANCE_METERS = 30000;
 /** Alternatives sharing more than this fraction of an existing route are dropped. */
 const MAX_OVERLAP_FRACTION = 0.7;
+/** Profile results sharing more than this of an existing path are treated as duplicates. */
+const PROFILE_DEDUP_OVERLAP = 0.9;
 
 export async function generateScenicRouteOptions(
   osmData: { elements: any[] },
@@ -55,7 +57,7 @@ export async function generateScenicRouteOptions(
     const path = findBestPath(graph, startNode.id, endNode.id, profile);
     if (!path) continue;
     // Skip profiles that resolve to (almost) the same road choice as one we have.
-    const isDuplicate = paths.some(existing => pathOverlapFraction(path, existing.path) > 0.95);
+    const isDuplicate = paths.some(existing => pathOverlapFraction(path, existing.path) > PROFILE_DEDUP_OVERLAP);
     if (!isDuplicate) {
       paths.push({ profile, path });
     }
@@ -66,17 +68,28 @@ export async function generateScenicRouteOptions(
     return [];
   }
 
-  // Generate a genuinely different scenic alternative by penalizing the edges
-  // of the best scenic path and re-routing.
+  // Generate meaningfully different scenic alternatives by escalating edge
+  // penalties on already-chosen corridors and re-routing. Produces up to two
+  // alternatives so the options panel isn't a single card when the corridor
+  // has parallel scenic roads.
   const scenicBase = paths.find(p => p.profile.name === 'Twisty Explorer') ?? paths[0];
-  const penalties = new Map<string, number>();
-  scenicBase.path.edges.forEach(edge => penalties.set(edge.id, 2.5));
-  const alternativePath = findBestPath(graph, startNode.id, endNode.id, scenicBase.profile, penalties);
-  if (
-    alternativePath &&
-    paths.every(existing => pathOverlapFraction(alternativePath, existing.path) < MAX_OVERLAP_FRACTION)
-  ) {
-    paths.push({ profile: scenicBase.profile, path: alternativePath, nameSuffix: ' (Alternative)' });
+  const usedEdgeIds = new Set(paths.flatMap(p => p.path.edges.map(edge => edge.id)));
+  const penaltyLevels = [2.5, 4.5];
+  let alternativeCount = 0;
+
+  for (const penalty of penaltyLevels) {
+    const penalties = new Map<string, number>();
+    usedEdgeIds.forEach(id => penalties.set(id, penalty));
+    const alternativePath = findBestPath(graph, startNode.id, endNode.id, scenicBase.profile, penalties);
+    if (
+      alternativePath &&
+      paths.every(existing => pathOverlapFraction(alternativePath, existing.path) < MAX_OVERLAP_FRACTION)
+    ) {
+      alternativeCount += 1;
+      const suffix = alternativeCount === 1 ? ' (Alternative)' : ` (Alternative ${alternativeCount})`;
+      paths.push({ profile: scenicBase.profile, path: alternativePath, nameSuffix: suffix });
+      alternativePath.edges.forEach(edge => usedEdgeIds.add(edge.id));
+    }
   }
 
   const options: RouteOption[] = [];

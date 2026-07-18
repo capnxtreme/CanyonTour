@@ -73,3 +73,85 @@ export function buildSyntheticNetwork(): { elements: any[] } {
 
   return { elements };
 }
+
+/**
+ * Three parallel corridors so edge-penalized alternatives can diverge:
+ * straight (shortest), medium-curve, and high-twistiness.
+ */
+export function buildSyntheticNetworkWithAlternatives(): { elements: any[] } {
+  const elements: any[] = [];
+
+  const addNode = (id: number, lat: number, lon: number) => {
+    elements.push({ type: 'node', id, lat, lon });
+  };
+
+  addNode(NODE_A_ID, BASE_LAT, WEST_LON);
+  addNode(NODE_B_ID, BASE_LAT, EAST_LON);
+
+  const straightNodeIds = [NODE_A_ID];
+  for (let i = 1; i <= 4; i++) {
+    const id = 100 + i;
+    addNode(id, BASE_LAT, WEST_LON + (EAST_LON - WEST_LON) * (i / 5));
+    straightNodeIds.push(id);
+  }
+  straightNodeIds.push(NODE_B_ID);
+  elements.push({
+    type: 'way',
+    id: 1000,
+    nodes: straightNodeIds,
+    tags: {
+      highway: 'secondary',
+      lanes: '2',
+      surface: 'asphalt',
+      maxspeed: '55 mph',
+      name: 'Straight Road',
+    },
+  });
+
+  // Medium corridor: gentle north offset.
+  const mediumNodeIds = [NODE_A_ID];
+  for (let i = 1; i < 8; i++) {
+    const id = 300 + i;
+    const lat = BASE_LAT + (i % 2 === 1 ? 0.004 : 0);
+    addNode(id, lat, WEST_LON + (EAST_LON - WEST_LON) * (i / 8));
+    mediumNodeIds.push(id);
+  }
+  mediumNodeIds.push(NODE_B_ID);
+  elements.push({
+    type: 'way',
+    id: 3000,
+    nodes: mediumNodeIds,
+    tags: {
+      highway: 'secondary',
+      lanes: '2',
+      surface: 'asphalt',
+      maxspeed: '55 mph',
+      name: 'Medium Road',
+    },
+  });
+
+  // High-twistiness corridor: large zigzag.
+  const twistyNodeIds = [NODE_A_ID];
+  const steps = 10;
+  for (let i = 1; i < steps; i++) {
+    const id = 200 + i;
+    const lat = BASE_LAT + (i % 2 === 1 ? 0.012 : 0);
+    addNode(id, lat, WEST_LON + (EAST_LON - WEST_LON) * (i / steps));
+    twistyNodeIds.push(id);
+  }
+  twistyNodeIds.push(NODE_B_ID);
+  elements.push({
+    type: 'way',
+    id: 2000,
+    nodes: twistyNodeIds,
+    tags: {
+      highway: 'secondary',
+      lanes: '2',
+      surface: 'asphalt',
+      maxspeed: '55 mph',
+      name: 'Twisty Road',
+    },
+  });
+
+  return { elements };
+}
